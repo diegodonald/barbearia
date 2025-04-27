@@ -1,4 +1,4 @@
-// src/pages/test-auth.tsx
+"use client";
 
 import React from "react";
 import useAuth from "@/hooks/useAuth";

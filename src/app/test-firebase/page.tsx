@@ -1,4 +1,5 @@
-// src/pages/test-firebase.tsx
+"use client";
+
 import React, { useEffect } from "react";
 import { auth } from "@/lib/firebase";
 
