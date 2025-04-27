@@ -1,0 +1,16 @@
+/* src/styles/globals.css */
+
+/* Reset básico */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  /* Exemplo de regra global */
+  body {
+    font-family: Arial, sans-serif;
+    background-color: #f7fafc;
+    color: #333;
+  }
+  
