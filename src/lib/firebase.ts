@@ -2,8 +2,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getAnalytics } from "firebase/analytics";
 
+// Configuração do Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyDS7NABLzgLwRM5GEEqPt8HQs5SdxrbLKk",
   authDomain: "barbearia-270425.firebaseapp.com",
@@ -16,11 +16,35 @@ const firebaseConfig = {
 
 // Inicializa o Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 
-// Inicializa os serviços que serão usados no projeto
+// Inicializa os serviços principais
 export const auth = getAuth(app);
 export const firestore = getFirestore(app);
 
-// Caso precise utilizar o app em outras partes, exporte também
+// Inicializa o Analytics somente no navegador com importação dinâmica
+let analytics: any = null;
+
+if (typeof window !== "undefined") {
+  // Usa importação dinâmica para carregar o módulo de Analytics
+  import("firebase/analytics")
+    .then(({ getAnalytics, isSupported }) => {
+      return isSupported().then((supported: boolean) => {
+        if (supported) {
+          try {
+            analytics = getAnalytics(app);
+            console.log("Firebase Analytics inicializado.");
+          } catch (error) {
+            console.error("Erro ao inicializar o Firebase Analytics:", error);
+          }
+        } else {
+          console.log("Firebase Analytics não é suportado neste ambiente.");
+        }
+      });
+    })
+    .catch((err) => {
+      console.error("Erro ao carregar o módulo firebase/analytics:", err);
+    });
+}
+
+export { analytics };
 export default app;
