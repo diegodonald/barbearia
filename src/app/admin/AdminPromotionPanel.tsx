@@ -2,25 +2,32 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, query, where, onSnapshot, updateDoc, doc, getDocs } from "firebase/firestore";
+import { collection, query, where, onSnapshot, updateDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
+
+// Define uma interface para os dados do usuário
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
 
 const AdminPromotionPanel: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
 
   // Estado para armazenar a lista de usuários com role "user"
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [error, setError] = useState("");
 
-  // Verifica se o usuário logado possui role "admin". Só admin pode acessar.
+  // Verifica se o usuário logado possui role "admin"
   useEffect(() => {
     if (!loading && user) {
-      // Supondo que useAuth retorne também o campo role do usuário logado
       if (user.role !== "admin") {
-        router.push("/"); // ou redirecione para uma página de acesso negado
+        router.push("/"); // Redireciona se não for admin
       }
     }
   }, [loading, user, router]);
@@ -31,7 +38,10 @@ const AdminPromotionPanel: React.FC = () => {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const usersData = snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+        const usersData = snapshot.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id,
+        })) as User[];
         setUsers(usersData);
         setLoadingUsers(false);
       },
@@ -44,13 +54,13 @@ const AdminPromotionPanel: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Função para promover um usuário para "barber"
+  // Função para promover um usuário a "barber"
   const promoteUser = async (userId: string) => {
     try {
       const userDocRef = doc(db, "usuarios", userId);
       await updateDoc(userDocRef, { role: "barber" });
       alert("Usuário promovido a Barbeiro com sucesso!");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Erro ao promover usuário:", error);
       setError("Erro ao promover usuário.");
     }
