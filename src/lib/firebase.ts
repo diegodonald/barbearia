@@ -19,13 +19,12 @@ const app = initializeApp(firebaseConfig);
 
 // Inicializa os serviços principais
 export const auth = getAuth(app);
-export const firestore = getFirestore(app);
+export const db = getFirestore(app);
 
 // Inicializa o Analytics somente no navegador com importação dinâmica
 let analytics: any = null;
 
 if (typeof window !== "undefined") {
-  // Usa importação dinâmica para carregar o módulo de Analytics
   import("firebase/analytics")
     .then(({ getAnalytics, isSupported }) => {
       return isSupported().then((supported: boolean) => {
