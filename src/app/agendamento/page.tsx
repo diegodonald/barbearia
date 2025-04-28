@@ -25,6 +25,12 @@ function getLocalDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Tipo para representar os barbeiros
+interface Barber {
+  id: string;
+  name: string;
+}
+
 const Agendamento: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -36,8 +42,9 @@ const Agendamento: React.FC = () => {
   const [selectedService, setSelectedService] = useState<string>("");
 
   // Etapa 2: Seleção do Barbeiro
-  const [selectedBarber, setSelectedBarber] = useState<string>("");
-
+  // selectedBarber: pode ser um objeto do tipo Barber, a string "Qualquer" ou "" (nenhuma seleção)
+  const [selectedBarber, setSelectedBarber] = useState<Barber | "Qualquer" | "">("");
+  
   // Etapa 3: Seleção de Data e Hora
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
@@ -51,8 +58,8 @@ const Agendamento: React.FC = () => {
   // Dados extras do usuário (ex.: nome)
   const [userName, setUserName] = useState<string>("");
 
-  // Lista dinâmica de barbeiros (obtida da coleção "usuarios" com role "barber")
-  const [barberList, setBarberList] = useState<string[]>([]);
+  // Lista dinâmica de barbeiros – agora um array de objetos {id, name}
+  const [barberList, setBarberList] = useState<Barber[]>([]);
 
   // Horários disponíveis (fixos, para demonstração)
   const availableSlots = {
@@ -93,8 +100,11 @@ const Agendamento: React.FC = () => {
       try {
         const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
         const querySnapshot = await getDocs(q);
-        // Supondo que o campo "name" contenha o nome do barbeiro, por exemplo "Barbeiro 1"
-        const list = querySnapshot.docs.map((doc) => doc.data().name as string);
+        // Mapeia para obter {id, name}
+        const list = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name as string,
+        }));
         setBarberList(list);
         console.log("Barbeiros encontrados:", list);
       } catch (error) {
@@ -113,22 +123,23 @@ const Agendamento: React.FC = () => {
 
       let q;
       if (selectedBarber === "Qualquer") {
-        // Se "Qualquer Barbeiro", usa a lista dinâmica
+        // Se "Qualquer Barbeiro", utiliza os IDs de todos os barbeiros disponíveis
         if (barberList.length === 0) {
           setBookedSlots([]);
           return;
         }
+        const barberIds = barberList.map((b) => b.id);
         q = query(
           collection(db, "agendamentos"),
           where("dateStr", "==", normalizedDateStr),
-          where("barber", "in", barberList)
+          where("barberId", "in", barberIds)
         );
       } else {
         // Consulta para um barbeiro específico
         q = query(
           collection(db, "agendamentos"),
           where("dateStr", "==", normalizedDateStr),
-          where("barber", "==", selectedBarber)
+          where("barberId", "==", (selectedBarber as Barber).id)
         );
       }
 
@@ -141,8 +152,7 @@ const Agendamento: React.FC = () => {
               slotCount[timeSlot] = (slotCount[timeSlot] || 0) + 1;
             }
           });
-          // Considera que o horário está totalmente ocupado se o número de agendamentos for
-          // igual ou maior que o número total de barbeiros disponíveis (barberList.length)
+          // O horário está ocupado se o número de agendamentos for igual ou maior que o número de barbeiros disponíveis
           const fullyBookedSlots = Object.keys(slotCount).filter(
             (slot) => slotCount[slot] >= barberList.length
           );
@@ -183,19 +193,21 @@ const Agendamento: React.FC = () => {
   };
 
   // Função para salvar o agendamento no Firestore
-  // Se em "Qualquer", recebe o barbeiro atribuído dinamicamente (availableBarber)
-  const saveAppointment = async (assignedBarber?: string) => {
+  // Se no modo "Qualquer Barbeiro", é passado o barbeiro atribuído dinamicamente
+  const saveAppointment = async (assignedBarber?: Barber) => {
     if (!selectedDate) return;
     const normalizedDateStr = getLocalDateString(selectedDate);
     try {
-      // Se um barbeiro foi atribuído (no modo "Qualquer"), usa-o; caso contrário, usa o selecionado
-      const barberToSave = assignedBarber ? assignedBarber : selectedBarber;
+      // Se um barbeiro foi atribuído (no modo "Qualquer"), usa-o; caso contrário,
+      // assume que selectedBarber é um objeto do tipo Barber
+      const barberToSave = assignedBarber ? assignedBarber : (selectedBarber as Barber);
       const docRef = await addDoc(collection(db, "agendamentos"), {
         uid: user?.uid,
         email: user?.email,
         name: userName,
         service: selectedService,
-        barber: barberToSave,
+        barber: barberToSave.name, // Nome do barbeiro
+        barberId: barberToSave.id, // UID do barbeiro
         dateStr: normalizedDateStr,
         timeSlot: selectedTimeSlot,
         createdAt: new Date(),
@@ -233,12 +245,12 @@ const Agendamento: React.FC = () => {
         setFeedback("Nenhum barbeiro disponível.");
         return;
       }
-      let availableBarber = "";
+      let availableBarber: Barber | null = null;
       for (const barber of barberList) {
         const q = query(
           collection(db, "agendamentos"),
           where("dateStr", "==", normalizedDateStr),
-          where("barber", "==", barber),
+          where("barberId", "==", barber.id),
           where("timeSlot", "==", selectedTimeSlot)
         );
         const snapshot = await getDocs(q);
@@ -267,6 +279,7 @@ const Agendamento: React.FC = () => {
           Agendamento para: <strong>{userName || user.email}</strong>
         </p>
       </div>
+
       <div className="max-w-3xl mx-auto bg-white p-6 rounded shadow">
         {step === 1 && (
           <>
@@ -307,6 +320,7 @@ const Agendamento: React.FC = () => {
             </div>
           </>
         )}
+
         {step === 2 && (
           <>
             <h2 className="text-xl mb-4">Selecione o Barbeiro</h2>
@@ -314,14 +328,16 @@ const Agendamento: React.FC = () => {
               {barberList.length > 0 ? (
                 barberList.map((barber) => (
                   <button
-                    key={barber}
+                    key={barber.id}
                     type="button"
                     onClick={() => setSelectedBarber(barber)}
                     className={`w-full p-2 border rounded ${
-                      selectedBarber === barber ? "bg-blue-500 text-white" : "bg-white"
+                      typeof selectedBarber === "object" && selectedBarber.id === barber.id
+                        ? "bg-blue-500 text-white"
+                        : "bg-white"
                     }`}
                   >
-                    {barber}
+                    {barber.name}
                   </button>
                 ))
               ) : (
@@ -347,6 +363,7 @@ const Agendamento: React.FC = () => {
             </div>
           </>
         )}
+
         {step === 3 && (
           <form onSubmit={handleConfirm} className="space-y-4">
             <h2 className="text-xl mb-4">Selecione Data e Hora</h2>
@@ -446,6 +463,7 @@ const Agendamento: React.FC = () => {
             </div>
           </form>
         )}
+
         {feedback && <p className="mt-4 text-center">{feedback}</p>}
       </div>
     </div>
