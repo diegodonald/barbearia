@@ -14,12 +14,8 @@ import {
   query,
   where,
   onSnapshot,
-  Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-
-// Defina o número total de barbeiros disponíveis (atualize essa constante conforme necessário)
-const TOTAL_BARBERS = 3;
 
 // Função auxiliar que retorna a data no formato "YYYY-MM-DD" usando o horário local
 function getLocalDateString(date: Date): string {
@@ -46,14 +42,17 @@ const Agendamento: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
 
-  // Estado para armazenar os horários já ocupados (usado para filtrar a UI)
+  // Estado para armazenar os horários já ocupados (para a UI)
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
-  // Mensagem de feedback para o usuário
+  // Mensagem de feedback
   const [feedback, setFeedback] = useState<string>("");
 
   // Dados extras do usuário (ex.: nome)
   const [userName, setUserName] = useState<string>("");
+
+  // Lista dinâmica de barbeiros (obtida da coleção "usuarios" com role "barber")
+  const [barberList, setBarberList] = useState<string[]>([]);
 
   // Horários disponíveis (fixos, para demonstração)
   const availableSlots = {
@@ -62,14 +61,14 @@ const Agendamento: React.FC = () => {
     evening: ["17:00", "17:30", "18:00"],
   };
 
-  // Se o usuário não estiver autenticado, redireciona para a página de login
+  // Redireciona para login se o usuário não estiver autenticado
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
     }
   }, [user, loading, router]);
 
-  // Busca dados extras do usuário na coleção "usuarios" para obter, por exemplo, o nome
+  // Busca dados extras do usuário (ex.: nome)
   useEffect(() => {
     const fetchUserData = async () => {
       if (user && !loading) {
@@ -88,20 +87,41 @@ const Agendamento: React.FC = () => {
     fetchUserData();
   }, [user, loading]);
 
+  // Busca dinamicamente a lista de barbeiros (usuários com role "barber")
+  useEffect(() => {
+    async function fetchBarbers() {
+      try {
+        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
+        const querySnapshot = await getDocs(q);
+        // Supondo que o campo "name" contenha o nome do barbeiro, por exemplo "Barbeiro 1"
+        const list = querySnapshot.docs.map((doc) => doc.data().name as string);
+        setBarberList(list);
+        console.log("Barbeiros encontrados:", list);
+      } catch (error) {
+        console.error("Erro ao buscar barbeiros:", error);
+      }
+    }
+    fetchBarbers();
+  }, []); // Executa uma vez ao montar o componente
+
   // onSnapshot para atualizar em tempo real os horários ocupados, baseado na data e no barbeiro selecionados
   useEffect(() => {
     if (selectedDate) {
-      // Normaliza a data para o formato "YYYY-MM-DD" (usando horário local)
+      // Normaliza a data para o formato "YYYY-MM-DD" (horário local)
       const normalizedDateStr = getLocalDateString(selectedDate);
       console.log("Data selecionada (local):", normalizedDateStr);
 
       let q;
       if (selectedBarber === "Qualquer") {
-        // Consulta para todos os barbeiros – usamos o campo "barber"
+        // Se "Qualquer Barbeiro", usa a lista dinâmica
+        if (barberList.length === 0) {
+          setBookedSlots([]);
+          return;
+        }
         q = query(
           collection(db, "agendamentos"),
           where("dateStr", "==", normalizedDateStr),
-          where("barber", "in", ["Barbeiro 1", "Barbeiro 2", "Barbeiro 3"])
+          where("barber", "in", barberList)
         );
       } else {
         // Consulta para um barbeiro específico
@@ -112,7 +132,6 @@ const Agendamento: React.FC = () => {
         );
       }
 
-      // Listener em tempo real (onSnapshot)
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         if (selectedBarber === "Qualquer") {
           const slotCount: { [key: string]: number } = {};
@@ -122,9 +141,10 @@ const Agendamento: React.FC = () => {
               slotCount[timeSlot] = (slotCount[timeSlot] || 0) + 1;
             }
           });
-          // Se um horário tiver agendamentos maiores ou iguais a TOTAL_BARBERS, ele está bloqueado
+          // Considera que o horário está totalmente ocupado se o número de agendamentos for
+          // igual ou maior que o número total de barbeiros disponíveis (barberList.length)
           const fullyBookedSlots = Object.keys(slotCount).filter(
-            (slot) => slotCount[slot] >= TOTAL_BARBERS
+            (slot) => slotCount[slot] >= barberList.length
           );
           setBookedSlots(fullyBookedSlots);
           console.log("Booked slots (Qualquer):", fullyBookedSlots);
@@ -141,7 +161,7 @@ const Agendamento: React.FC = () => {
     } else {
       setBookedSlots([]);
     }
-  }, [selectedDate, selectedBarber]);
+  }, [selectedDate, selectedBarber, barberList]);
 
   // Handlers para navegação entre as etapas
   const handleNext = () => {
@@ -163,13 +183,12 @@ const Agendamento: React.FC = () => {
   };
 
   // Função para salvar o agendamento no Firestore
-  // Agora, se for fornecido um barbeiro específico (quando em "Qualquer"), usa-o
+  // Se em "Qualquer", recebe o barbeiro atribuído dinamicamente (availableBarber)
   const saveAppointment = async (assignedBarber?: string) => {
     if (!selectedDate) return;
-    // Usa o mesmo formato local para a data
     const normalizedDateStr = getLocalDateString(selectedDate);
     try {
-      // Se atribuímos um barbeiro no modo "Qualquer", usa-o; senão, utiliza o selecionado
+      // Se um barbeiro foi atribuído (no modo "Qualquer"), usa-o; caso contrário, usa o selecionado
       const barberToSave = assignedBarber ? assignedBarber : selectedBarber;
       const docRef = await addDoc(collection(db, "agendamentos"), {
         uid: user?.uid,
@@ -177,7 +196,7 @@ const Agendamento: React.FC = () => {
         name: userName,
         service: selectedService,
         barber: barberToSave,
-        dateStr: normalizedDateStr, // Salva a data como string (YYYY-MM-DD)
+        dateStr: normalizedDateStr,
         timeSlot: selectedTimeSlot,
         createdAt: new Date(),
       });
@@ -209,8 +228,11 @@ const Agendamento: React.FC = () => {
       }
       await saveAppointment();
     } else {
-      // Modo "Qualquer Barbeiro": busca o primeiro barbeiro disponível para aquele horário
-      const barberList = ["Barbeiro 1", "Barbeiro 2", "Barbeiro 3"];
+      // Modo "Qualquer Barbeiro": percorre a lista dinâmica para encontrar o primeiro barbeiro disponível para o horário selecionado
+      if (barberList.length === 0) {
+        setFeedback("Nenhum barbeiro disponível.");
+        return;
+      }
       let availableBarber = "";
       for (const barber of barberList) {
         const q = query(
@@ -229,7 +251,6 @@ const Agendamento: React.FC = () => {
         setFeedback("Esse horário não está disponível. Por favor, escolha outro.");
         return;
       }
-      // Se encontrou um barbeiro disponível, salva o agendamento com esse barbeiro
       await saveAppointment(availableBarber);
     }
   };
@@ -246,7 +267,6 @@ const Agendamento: React.FC = () => {
           Agendamento para: <strong>{userName || user.email}</strong>
         </p>
       </div>
-
       <div className="max-w-3xl mx-auto bg-white p-6 rounded shadow">
         {step === 1 && (
           <>
@@ -281,47 +301,32 @@ const Agendamento: React.FC = () => {
               </button>
             </div>
             <div className="flex justify-end mt-6">
-              <button
-                onClick={handleNext}
-                className="bg-blue-500 text-white px-4 py-2 rounded"
-              >
+              <button onClick={handleNext} className="bg-blue-500 text-white px-4 py-2 rounded">
                 Próximo
               </button>
             </div>
           </>
         )}
-
         {step === 2 && (
           <>
             <h2 className="text-xl mb-4">Selecione o Barbeiro</h2>
             <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setSelectedBarber("Barbeiro 1")}
-                className={`w-full p-2 border rounded ${
-                  selectedBarber === "Barbeiro 1" ? "bg-blue-500 text-white" : "bg-white"
-                }`}
-              >
-                Barbeiro 1
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedBarber("Barbeiro 2")}
-                className={`w-full p-2 border rounded ${
-                  selectedBarber === "Barbeiro 2" ? "bg-blue-500 text-white" : "bg-white"
-                }`}
-              >
-                Barbeiro 2
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedBarber("Barbeiro 3")}
-                className={`w-full p-2 border rounded ${
-                  selectedBarber === "Barbeiro 3" ? "bg-blue-500 text-white" : "bg-white"
-                }`}
-              >
-                Barbeiro 3
-              </button>
+              {barberList.length > 0 ? (
+                barberList.map((barber) => (
+                  <button
+                    key={barber}
+                    type="button"
+                    onClick={() => setSelectedBarber(barber)}
+                    className={`w-full p-2 border rounded ${
+                      selectedBarber === barber ? "bg-blue-500 text-white" : "bg-white"
+                    }`}
+                  >
+                    {barber}
+                  </button>
+                ))
+              ) : (
+                <p>Nenhum barbeiro encontrado.</p>
+              )}
               <button
                 type="button"
                 onClick={() => setSelectedBarber("Qualquer")}
@@ -333,22 +338,15 @@ const Agendamento: React.FC = () => {
               </button>
             </div>
             <div className="flex justify-between mt-6">
-              <button
-                onClick={handleBack}
-                className="bg-gray-500 text-white px-4 py-2 rounded"
-              >
+              <button onClick={handleBack} className="bg-gray-500 text-white px-4 py-2 rounded">
                 Voltar
               </button>
-              <button
-                onClick={handleNext}
-                className="bg-blue-500 text-white px-4 py-2 rounded"
-              >
+              <button onClick={handleNext} className="bg-blue-500 text-white px-4 py-2 rounded">
                 Próximo
               </button>
             </div>
           </>
         )}
-
         {step === 3 && (
           <form onSubmit={handleConfirm} className="space-y-4">
             <h2 className="text-xl mb-4">Selecione Data e Hora</h2>
@@ -383,9 +381,7 @@ const Agendamento: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedTimeSlot(slot)}
                             className={`px-3 py-1 border rounded ${
-                              selectedTimeSlot === slot
-                                ? "bg-blue-500 text-white"
-                                : "bg-white"
+                              selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white"
                             }`}
                           >
                             {slot}
@@ -405,9 +401,7 @@ const Agendamento: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedTimeSlot(slot)}
                             className={`px-3 py-1 border rounded ${
-                              selectedTimeSlot === slot
-                                ? "bg-blue-500 text-white"
-                                : "bg-white"
+                              selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white"
                             }`}
                           >
                             {slot}
@@ -427,9 +421,7 @@ const Agendamento: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedTimeSlot(slot)}
                             className={`px-3 py-1 border rounded ${
-                              selectedTimeSlot === slot
-                                ? "bg-blue-500 text-white"
-                                : "bg-white"
+                              selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white"
                             }`}
                           >
                             {slot}
@@ -454,7 +446,6 @@ const Agendamento: React.FC = () => {
             </div>
           </form>
         )}
-
         {feedback && <p className="mt-4 text-center">{feedback}</p>}
       </div>
     </div>
