@@ -19,16 +19,16 @@ const Signup: React.FC = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Cria o usuário no Firebase Auth e obtem as credenciais
+      // Cria o usuário no Firebase Auth e obtém as credenciais
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Cria o documento na coleção "usuarios" no Firestore com o nome incluído
+      // Cria o documento na coleção "usuarios" no Firestore com o nome e define a role padrão "user"
       await setDoc(doc(db, "usuarios", user.uid), {
         name, // salva o nome do usuário
         email: user.email,
         createdAt: new Date(),
-        // Adicione outros campos se necessário
+        role: "user" // define o role padrão para "user"
       });
 
       // Redireciona para a página inicial ou para outra rota desejada
