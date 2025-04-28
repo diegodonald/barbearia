@@ -20,9 +20,12 @@ const Login: React.FC = () => {
       await signInWithEmailAndPassword(auth, email, password);
       // Se a autenticação tiver sucesso, redireciona para a página inicial
       router.push("/");
-    } catch (err: any) {
-      // Em caso de erro, armazena a mensagem de erro na variável 'error'
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Ocorreu um erro inesperado ao tentar efetuar o login.");
+      }
     }
   };
 

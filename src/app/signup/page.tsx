@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
 
 const Signup: React.FC = () => {
-  // Novo estado para armazenar o nome do usuário
+  // Estado para armazenar o nome do usuário
   const [name, setName] = useState("");
   // Estados para email, senha e possíveis erros
   const [email, setEmail] = useState("");
@@ -16,7 +16,7 @@ const Signup: React.FC = () => {
   const router = useRouter();
 
   // Função para tratar o envio do formulário
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       // Cria o usuário no Firebase Auth e obtém as credenciais
@@ -33,8 +33,12 @@ const Signup: React.FC = () => {
 
       // Redireciona para a página inicial ou para outra rota desejada
       router.push("/");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Ocorreu um erro inesperado.");
+      }
     }
   };
 
