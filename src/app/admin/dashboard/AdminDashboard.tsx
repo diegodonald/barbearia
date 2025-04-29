@@ -8,6 +8,8 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  getDocs,
+  where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
@@ -44,11 +46,15 @@ const AdminDashboard: React.FC = () => {
   // Estado para controle da edição inline de um agendamento
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
 
+  // Estados para armazenar as opções dos dropdowns
+  const [serviceOptions, setServiceOptions] = useState<string[]>([]);
+  const [barberOptions, setBarberOptions] = useState<string[]>([]);
+
   // Verifica se o usuário logado possui role "admin"
   useEffect(() => {
     if (!loading && user) {
       if ((user as ExtendedUser).role !== "admin") {
-        router.push("/"); // redireciona caso não seja admin
+        router.push("/"); // Redireciona caso não seja admin
       }
     }
   }, [loading, user, router]);
@@ -72,40 +78,35 @@ const AdminDashboard: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Função para iniciar a edição de um agendamento
-  const handleStartEditing = (appt: Appointment) => {
-    setEditingAppointment({ ...appt });
-  };
+  // Busca as opções de serviços cadastrados
+  useEffect(() => {
+    const fetchServiceOptions = async () => {
+      try {
+        const q = query(collection(db, "servicos"));
+        const snapshot = await getDocs(q);
+        const services = snapshot.docs.map((doc) => doc.data().name) as string[];
+        setServiceOptions(services);
+      } catch (error) {
+        console.error("Erro ao buscar serviços:", error);
+      }
+    };
+    fetchServiceOptions();
+  }, []);
 
-  // Função para descartar a edição
-  const handleCancelEdit = () => {
-    setEditingAppointment(null);
-  };
-
-  // Função para salvar as alterações do agendamento editado
-  const handleSaveEdit = async () => {
-    if (!editingAppointment) return;
-    try {
-      await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
-        dateStr: editingAppointment.dateStr,
-        timeSlot: editingAppointment.timeSlot,
-        status: editingAppointment.status,
-      });
-      setEditingAppointment(null);
-    } catch (error) {
-      console.error("Erro ao atualizar agendamento:", error);
-    }
-  };
-
-  // Função para cancelar (excluir) um agendamento definitivamente
-  const handleCancelAppointment = async (appt: Appointment) => {
-    if (!confirm("Deseja realmente cancelar este agendamento?")) return;
-    try {
-      await deleteDoc(doc(db, "agendamentos", appt.id));
-    } catch (error) {
-      console.error("Erro ao cancelar agendamento:", error);
-    }
-  };
+  // Busca as opções dos barbeiros cadastrados (usuários com role "barber")
+  useEffect(() => {
+    const fetchBarberOptions = async () => {
+      try {
+        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
+        const snapshot = await getDocs(q);
+        const barbers = snapshot.docs.map((doc) => doc.data().name) as string[];
+        setBarberOptions(barbers);
+      } catch (error) {
+        console.error("Erro ao buscar barbeiros:", error);
+      }
+    };
+    fetchBarberOptions();
+  }, []);
 
   // Funções para os botões de data "Hoje" e "Amanhã"
   const setTodayFilter = () => {
@@ -130,7 +131,7 @@ const AdminDashboard: React.FC = () => {
     setFilterBarber("");
   };
 
-  // Cria uma lista única de barbeiros a partir dos agendamentos
+  // Cria uma lista única de barbeiros a partir dos agendamentos para o filtro
   const uniqueBarbers = Array.from(new Set(appointments.map((app) => app.barber))).sort();
 
   // Aplica os filtros na lista de agendamentos
@@ -139,6 +140,43 @@ const AdminDashboard: React.FC = () => {
     const matchBarber = filterBarber ? appt.barber === filterBarber : true;
     return matchDate && matchBarber;
   });
+
+  // Função para iniciar a edição de um agendamento
+  const handleStartEditing = (appt: Appointment) => {
+    setEditingAppointment({ ...appt });
+  };
+
+  // Função para descartar a edição
+  const handleCancelEdit = () => {
+    setEditingAppointment(null);
+  };
+
+  // Função para salvar as alterações do agendamento editado
+  const handleSaveEdit = async () => {
+    if (!editingAppointment) return;
+    try {
+      await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
+        dateStr: editingAppointment.dateStr,
+        timeSlot: editingAppointment.timeSlot,
+        service: editingAppointment.service,
+        barber: editingAppointment.barber,
+        status: editingAppointment.status,
+      });
+      setEditingAppointment(null);
+    } catch (error) {
+      console.error("Erro ao atualizar agendamento:", error);
+    }
+  };
+
+  // Função para cancelar (excluir) um agendamento definitivamente
+  const handleCancelAppointment = async (appt: Appointment) => {
+    if (!confirm("Deseja realmente cancelar este agendamento?")) return;
+    try {
+      await deleteDoc(doc(db, "agendamentos", appt.id));
+    } catch (error) {
+      console.error("Erro ao cancelar agendamento:", error);
+    }
+  };
 
   if (loading || loadingAppointments) {
     return <p>Carregando dados...</p>;
@@ -199,7 +237,6 @@ const AdminDashboard: React.FC = () => {
       {filteredAppointments.length === 0 ? (
         <p>Nenhum agendamento encontrado.</p>
       ) : (
-        // Envolvemos a tabela com uma div com overflow-x-auto para dispositivos móveis
         <div className="overflow-x-auto">
           <table className="min-w-full border border-gray-200">
             <thead>
@@ -216,7 +253,6 @@ const AdminDashboard: React.FC = () => {
             <tbody>
               {filteredAppointments.map((app) =>
                 editingAppointment && editingAppointment.id === app.id ? (
-                  // Linha em modo de edição
                   <tr key={app.id}>
                     <td className="px-4 py-2 border">
                       <input
@@ -228,7 +264,7 @@ const AdminDashboard: React.FC = () => {
                             dateStr: e.target.value,
                           })
                         }
-                        className="px-2 py-1 rounded text-black"
+                        className="px-2 py-1 rounded text-black bg-gray-100"
                       />
                     </td>
                     <td className="px-4 py-2 border">
@@ -241,11 +277,45 @@ const AdminDashboard: React.FC = () => {
                             timeSlot: e.target.value,
                           })
                         }
-                        className="px-2 py-1 rounded text-black"
+                        className="px-2 py-1 rounded text-black bg-gray-100"
                       />
                     </td>
-                    <td className="px-4 py-2 border">{app.service}</td>
-                    <td className="px-4 py-2 border">{app.barber}</td>
+                    <td className="px-4 py-2 border">
+                      <select
+                        value={editingAppointment.service}
+                        onChange={(e) =>
+                          setEditingAppointment({
+                            ...editingAppointment,
+                            service: e.target.value,
+                          })
+                        }
+                        className="px-2 py-1 rounded text-black bg-gray-100"
+                      >
+                        {serviceOptions.map((s, idx) => (
+                          <option key={idx} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2 border">
+                      <select
+                        value={editingAppointment.barber}
+                        onChange={(e) =>
+                          setEditingAppointment({
+                            ...editingAppointment,
+                            barber: e.target.value,
+                          })
+                        }
+                        className="px-2 py-1 rounded text-black bg-gray-100"
+                      >
+                        {barberOptions.map((b, idx) => (
+                          <option key={idx} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td className="px-4 py-2 border">{app.name}</td>
                     <td className="px-4 py-2 border">
                       <select
@@ -256,7 +326,7 @@ const AdminDashboard: React.FC = () => {
                             status: e.target.value,
                           })
                         }
-                        className="px-2 py-1 text-black rounded"
+                        className="px-2 py-1 rounded text-black bg-gray-100"
                       >
                         <option value="confirmado">Confirmado</option>
                         <option value="pendente">Pendente</option>
@@ -281,7 +351,6 @@ const AdminDashboard: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  // Linha de visualização normal
                   <tr key={app.id}>
                     <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
                     <td className="px-4 py-2 border">{app.timeSlot}</td>
