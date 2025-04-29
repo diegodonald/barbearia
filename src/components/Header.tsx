@@ -40,7 +40,7 @@ const Cabecalho: React.FC = () => {
           <Link href="/servicos">
             <span className="hover:text-gray-300 cursor-pointer">Serviços</span>
           </Link>
-          <Link href="/reservar">
+          <Link href="/agendamento">
             <span className="hover:text-gray-300 cursor-pointer">Reservar</span>
           </Link>
         </nav>
@@ -71,7 +71,7 @@ const Cabecalho: React.FC = () => {
               </Link>
             </>
           )}
-          <Link href="/reservar">
+          <Link href="/agendamento">
             <span className="bg-yellow-500 text-black font-semibold px-4 py-2 rounded hover:bg-yellow-600 transition cursor-pointer">
               Reservar Agora
             </span>
@@ -147,7 +147,7 @@ const Cabecalho: React.FC = () => {
               </Link>
             </li>
             <li>
-              <Link href="/reservar">
+              <Link href="/agendamento">
                 <span
                   className="hover:text-gray-300 cursor-pointer"
                   onClick={() => setMobileMenuOpen(false)}
@@ -194,7 +194,7 @@ const Cabecalho: React.FC = () => {
                 </Link>
               </div>
             )}
-            <Link href="/reservar">
+            <Link href="/agendamento">
               <span
                 className="bg-yellow-500 text-black font-semibold px-4 py-2 rounded hover:bg-yellow-600 transition cursor-pointer"
                 onClick={() => setMobileMenuOpen(false)}
