@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 import {
   collection,
   query,
@@ -10,13 +12,33 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  addDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { ExtendedUser } from "@/hooks/useAuth";
+// Removi o Footer e Header, pois o Header já foi corrigido e o Footer está duplicado.
+// Se necessário, mantenha o Header, mas certifique-se de que o layout global não adicione outro Footer.
+// import Header from "@/components/Header";
+// import Footer from "@/components/Footer";
 
-// Define a interface para um agendamento
+// Função auxiliar para converter "YYYY-MM-DD" para "DD/MM/YYYY"
+const formatDate = (dateStr: string): string => {
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+};
+
+// Função auxiliar que retorna a data no formato "YYYY-MM-DD" usando o horário local
+function getLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = ("0" + (date.getMonth() + 1)).slice(-2);
+  const day = ("0" + date.getDate()).slice(-2);
+  return `${year}-${month}-${day}`;
+}
+
+// Interface para agendamento
 interface Appointment {
   id: string;
   dateStr: string;
@@ -25,76 +47,70 @@ interface Appointment {
   barber: string;
   barberId: string;
   name: string; // Nome do cliente
-  status: string; // "confirmado", "pendente", "cancelado", "finalizado", etc.
+  status: string;
 }
 
-// Interface para as opções de serviço e para os barbeiros
-// Para os barbeiros, usaremos id e name
+// Interface para representar barbeiros (para dropdown de referência, se necessário)
 interface BarberOption {
   id: string;
   name: string;
 }
 
-// Função auxiliar para converter "YYYY-MM-DD" em "DD/MM/YYYY"
-const formatDate = (dateStr: string): string => {
-  const parts = dateStr.split("-");
-  if (parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-};
-
 const BarberDashboard: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
 
+  // Estados para listagem e edição de agendamentos existentes
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(true);
-
-  // Filtros por data (o filtro por barbeiro não é necessário, pois o barbeiro vê só os seus)
   const [filterDate, setFilterDate] = useState<string>("");
-
-  // Estado para edição inline: permite que o barbeiro altere Data, Horário, Serviço e Status
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
 
-  // Estado para armazenar as opções de serviços (obtidas da coleção "servicos")
+  // Estados para novos agendamentos para clientes
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [newService, setNewService] = useState<string>("");
+  const [newClientName, setNewClientName] = useState<string>("");
+  const [newDate, setNewDate] = useState<Date | null>(null);
+  const [newTimeSlot, setNewTimeSlot] = useState<string>("");
+  const [newBookedSlots, setNewBookedSlots] = useState<string[]>([]);
+  const [newFeedback, setNewFeedback] = useState<string>("");
+
+  // Estados para opções dinâmicas
   const [serviceOptions, setServiceOptions] = useState<string[]>([]);
-  // Estado para armazenar a lista de barbeiros – embora, neste painel, o usuário seja o barbeiro, 
-  // usamos essa lista para preencher o dropdown de serviços (não será editável o campo "barber")
-  const [barberOption, setBarberOption] = useState<BarberOption | null>(null);
+  const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
 
-  // Carrega as opções de serviços
+  // Dados do barbeiro logado
+  const [barberInfo, setBarberInfo] = useState<BarberOption | null>(null);
+
+  // Horários disponíveis (fixos, para demonstração)
+  const availableSlots = {
+    morning: ["10:00", "10:30", "11:00"],
+    afternoon: ["12:30", "13:00", "13:30", "14:00"],
+    evening: ["17:00", "17:30", "18:00"],
+  };
+
+  // Verificação de autenticação e role
   useEffect(() => {
-    const fetchServiceOptions = async () => {
-      try {
-        const q = query(collection(db, "servicos"));
-        const snapshot = await getDocs(q);
-        const services = snapshot.docs.map((doc) => doc.data().name) as string[];
-        setServiceOptions(services);
-      } catch (error) {
-        console.error("Erro ao buscar serviços:", error);
-      }
-    };
-    fetchServiceOptions();
-  }, []);
+    if (!loading && !user) {
+      router.push("/login");
+    }
+  }, [user, loading, router]);
 
-  // Como este painel é para barbeiros, já sabemos que o usuário logado é barbeiro.
-  // Se desejar, podemos definir o barbeiro logado como opção:
   useEffect(() => {
     if (!loading && user) {
-      // Usamos o usuário logado para definir o barbeiro
-      setBarberOption({ id: user.uid, name: (user as any).name || "" });
+      setBarberInfo({ id: user.uid, name: (user as any).name || "" });
     }
-  }, [loading, user]);
+  }, [user, loading]);
 
-  // Verifica que apenas usuários com role "barber" podem acessar
   useEffect(() => {
     if (!loading && user) {
       if ((user as ExtendedUser).role !== "barber") {
         router.push("/");
       }
     }
-  }, [loading, user, router]);
+  }, [user, loading, router]);
 
-  // Busca, em tempo real, os agendamentos atribuídos ao barbeiro logado (usando barberId)
+  // Busca dos agendamentos do barbeiro (filtrados pelo barberId)
   useEffect(() => {
     if (user) {
       const q = query(
@@ -119,12 +135,44 @@ const BarberDashboard: React.FC = () => {
     }
   }, [user]);
 
-  // Filtra os agendamentos pelo filtro de data, se definido
-  const filteredAppointments = appointments.filter((appt) => {
-    return filterDate ? appt.dateStr === filterDate : true;
-  });
+  // Busca das opções de serviços a partir da coleção "servicos"
+  useEffect(() => {
+    async function fetchServiceOptions() {
+      try {
+        const q = query(collection(db, "servicos"));
+        const snapshot = await getDocs(q);
+        const services = snapshot.docs.map((doc) => doc.data().name) as string[];
+        setServiceOptions(services);
+      } catch (error) {
+        console.error("Erro ao buscar serviços:", error);
+      }
+    }
+    fetchServiceOptions();
+  }, []);
 
-  // Handlers para filtros "Hoje", "Amanhã" e "Limpar Filtros"
+  // Busca das opções de barbeiros para referência (se necessário)
+  useEffect(() => {
+    async function fetchBarberOptions() {
+      try {
+        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
+        const snapshot = await getDocs(q);
+        const barbers = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name,
+        })) as BarberOption[];
+        setBarberOptions(barbers);
+      } catch (error) {
+        console.error("Erro ao buscar barbeiros:", error);
+      }
+    }
+    fetchBarberOptions();
+  }, []);
+
+  // Filtro dos agendamentos existentes por data
+  const filteredAppointments = appointments.filter((appt) =>
+    filterDate ? appt.dateStr === filterDate : true
+  );
+
   const setTodayFilter = () => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -146,27 +194,24 @@ const BarberDashboard: React.FC = () => {
     setFilterDate("");
   };
 
-  // Função para iniciar a edição de um agendamento: copia os dados para o estado de edição
+  // Edição dos agendamentos existentes
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
   };
 
-  // Função para cancelar a edição
   const handleCancelEdit = () => {
     setEditingAppointment(null);
   };
 
-  // Função para salvar as alterações do agendamento (permitindo editar Data, Horário, Serviço e Status)
   const handleSaveEdit = async () => {
     if (!editingAppointment) return;
     try {
-      // Atualiza também o campo barberId, que normalmente permanece o mesmo
       await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
         dateStr: editingAppointment.dateStr,
         timeSlot: editingAppointment.timeSlot,
         service: editingAppointment.service,
         status: editingAppointment.status,
-        barber: editingAppointment.barber, // Geralmente, o barbeiro não muda, mas exibimos para conferência
+        barber: editingAppointment.barber,
         barberId: editingAppointment.barberId,
       });
       setEditingAppointment(null);
@@ -175,7 +220,6 @@ const BarberDashboard: React.FC = () => {
     }
   };
 
-  // Função para excluir (cancelar) o agendamento
   const handleCancelAppointment = async (appt: Appointment) => {
     if (!confirm("Deseja realmente cancelar este agendamento?")) return;
     try {
@@ -185,15 +229,85 @@ const BarberDashboard: React.FC = () => {
     }
   };
 
-  if (loading || loadingAppointments) {
+  // Atualiza os horários ocupados para o novo agendamento (baseado na data selecionada)
+  useEffect(() => {
+    if (newDate && barberInfo) {
+      const normalizedDateStr = getLocalDateString(newDate);
+      const q = query(
+        collection(db, "agendamentos"),
+        where("dateStr", "==", normalizedDateStr),
+        where("barberId", "==", barberInfo.id)
+      );
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const booked = Array.from(
+          new Set(snapshot.docs.map((docSnap) => docSnap.data().timeSlot))
+        );
+        setNewBookedSlots(booked);
+      });
+      return () => unsubscribe();
+    } else {
+      setNewBookedSlots([]);
+    }
+  }, [newDate, barberInfo]);
+
+  const saveNewAppointment = async () => {
+    if (!newDate || !barberInfo) return;
+    const normalizedDateStr = getLocalDateString(newDate);
+    try {
+      await addDoc(collection(db, "agendamentos"), {
+        uid: user?.uid,
+        email: user?.email,
+        name: newClientName,
+        service: newService,
+        barber: barberInfo.name,
+        barberId: barberInfo.id,
+        dateStr: normalizedDateStr,
+        timeSlot: newTimeSlot,
+        createdAt: new Date(),
+        status: "confirmado",
+      });
+      setNewFeedback("Agendamento salvo com sucesso!");
+      setNewService("");
+      setNewClientName("");
+      setNewDate(null);
+      setNewTimeSlot("");
+      setTimeout(() => {
+        setIsCreating(false);
+        setNewFeedback("");
+      }, 2000);
+    } catch (error) {
+      console.error("Erro ao salvar agendamento:", error);
+      setNewFeedback("Erro ao salvar agendamento. Tente novamente.");
+    }
+  };
+
+  const handleConfirmNewAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDate) {
+      setNewFeedback("Por favor, selecione uma data.");
+      return;
+    }
+    if (!newTimeSlot) {
+      setNewFeedback("Por favor, selecione um horário.");
+      return;
+    }
+    if (newBookedSlots.includes(newTimeSlot)) {
+      setNewFeedback("Esse horário não está disponível. Por favor, escolha outro.");
+      return;
+    }
+    await saveNewAppointment();
+  };
+
+  if (loading || !user || loadingAppointments) {
     return <p>Carregando dados...</p>;
   }
 
   return (
     <div className="p-4">
+      {/* O Header deve vir do layout global; se necessário, inclua aqui apenas uma vez */}
       <h1 className="text-2xl font-bold mb-4">Painel do Barbeiro</h1>
 
-      {/* Seção de Filtros */}
+      {/* Seção de Filtros para agendamentos existentes */}
       <div className="mb-4 flex flex-wrap gap-4 items-end">
         <div>
           <label className="block mb-1">Filtrar por Data:</label>
@@ -224,6 +338,112 @@ const BarberDashboard: React.FC = () => {
         </button>
       </div>
 
+      {/* Seção de Novo Agendamento para Cliente */}
+      <div className="mb-8">
+        {isCreating ? (
+          <div className="bg-gray-900 p-6 rounded shadow">
+            <h2 className="text-xl font-bold mb-4">Novo Agendamento para Cliente</h2>
+            <form onSubmit={handleConfirmNewAppointment} className="space-y-4">
+              <div>
+                <label className="block mb-1">Serviço:</label>
+                <select
+                  value={newService}
+                  onChange={(e) => setNewService(e.target.value)}
+                  className="w-full px-3 py-2 border rounded bg-white text-black"
+                  required
+                >
+                  <option value="">Selecione um serviço</option>
+                  {serviceOptions.map((s, idx) => (
+                    <option key={idx} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block mb-1">Nome do Cliente:</label>
+                <input
+                  type="text"
+                  placeholder="Digite o nome do cliente"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded bg-white text-black"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block mb-1">Selecione a Data:</label>
+                <DatePicker
+                  selected={newDate}
+                  onChange={(date: Date | null) => {
+                    setNewDate(date);
+                    setNewTimeSlot("");
+                  }}
+                  minDate={new Date()}
+                  dateFormat="dd/MM/yyyy"
+                  className="w-full px-3 py-2 border rounded text-black"
+                  placeholderText="Selecione uma data"
+                  required
+                />
+              </div>
+              {newDate && (
+                <>
+                  <h3 className="text-lg mt-4">Horários Disponíveis</h3>
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    {(["morning", "afternoon", "evening"] as (keyof typeof availableSlots)[]).map(
+                      (period) => (
+                        <div key={period}>
+                          <h4 className="font-bold capitalize">{period}</h4>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {availableSlots[period]
+                              .filter((slot) => !newBookedSlots.includes(slot))
+                              .map((slot) => (
+                                <button
+                                  key={slot}
+                                  type="button"
+                                  onClick={() => setNewTimeSlot(slot)}
+                                  className={`px-3 py-1 border rounded ${
+                                    newTimeSlot === slot
+                                      ? "bg-blue-500 text-white"
+                                      : "bg-white text-black"
+                                  }`}
+                                >
+                                  {slot}
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsCreating(false)}
+                  className="bg-gray-500 text-white px-4 py-2 rounded"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
+                  Confirmar Agendamento
+                </button>
+              </div>
+              {newFeedback && <p className="mt-4 text-center">{newFeedback}</p>}
+            </form>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsCreating(true)}
+            className="bg-green-500 text-white px-4 py-2 rounded mb-8"
+          >
+            Novo Agendamento para Cliente
+          </button>
+        )}
+      </div>
+
+      {/* Listagem e Edição dos Agendamentos Existentes */}
       {filteredAppointments.length === 0 ? (
         <p>Nenhum agendamento encontrado.</p>
       ) : (
@@ -243,7 +463,6 @@ const BarberDashboard: React.FC = () => {
             <tbody>
               {filteredAppointments.map((app) =>
                 editingAppointment && editingAppointment.id === app.id ? (
-                  // Linha em modo de edição
                   <tr key={app.id}>
                     <td className="px-4 py-2 border">
                       <input
@@ -289,14 +508,7 @@ const BarberDashboard: React.FC = () => {
                         ))}
                       </select>
                     </td>
-                    <td className="px-4 py-2 border">
-                      <input
-                        type="text"
-                        value={editingAppointment.barber}
-                        disabled
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      />
-                    </td>
+                    <td className="px-4 py-2 border">{editingAppointment.barber}</td>
                     <td className="px-4 py-2 border">{app.name}</td>
                     <td className="px-4 py-2 border">
                       <select
@@ -333,7 +545,6 @@ const BarberDashboard: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  // Linha de visualização normal
                   <tr key={app.id}>
                     <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
                     <td className="px-4 py-2 border">{app.timeSlot}</td>
@@ -342,7 +553,7 @@ const BarberDashboard: React.FC = () => {
                     <td className="px-4 py-2 border">{app.name}</td>
                     <td className="px-4 py-2 border">{app.status}</td>
                     <td className="px-4 py-2 border">
-                      <div className="flex space-x-2">
+                      <div className="flex">
                         <button
                           onClick={() => handleStartEditing(app)}
                           className="bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600 transition"
@@ -364,6 +575,7 @@ const BarberDashboard: React.FC = () => {
           </table>
         </div>
       )}
+      {/* Footer removido para evitar duplicidade, pois o layout global já o fornece */}
     </div>
   );
 };
