@@ -43,8 +43,7 @@ const Agendamento: React.FC = () => {
   // Etapa 1: Seleção do Serviço
   const [selectedService, setSelectedService] = useState<string>("");
 
-  // Etapa 2: Seleção do Barbeiro
-  // Pode ser um objeto do tipo Barber, a string "Qualquer" ou "" (nenhuma seleção)
+  // Etapa 2: Seleção do Barbeiro – pode ser um objeto do tipo Barber, a string "Qualquer" ou ""
   const [selectedBarber, setSelectedBarber] = useState<Barber | "Qualquer" | "">("");
 
   // Etapa 3: Seleção de Data e Hora
@@ -56,6 +55,9 @@ const Agendamento: React.FC = () => {
 
   // Mensagem de feedback
   const [feedback, setFeedback] = useState<string>("");
+
+  // Estado para controlar a exibição do popup de confirmação
+  const [showPopup, setShowPopup] = useState<boolean>(false);
 
   // Dados extras do usuário (ex.: nome)
   const [userName, setUserName] = useState<string>("");
@@ -170,7 +172,7 @@ const Agendamento: React.FC = () => {
     }
   }, [selectedDate, selectedBarber, barberList]);
 
-  // Navegação entre etapas
+  // Navegação entre as etapas
   const handleNext = () => {
     if (step === 1 && !selectedService) {
       setFeedback("Por favor, selecione um serviço.");
@@ -214,7 +216,7 @@ const Agendamento: React.FC = () => {
     }
   };
 
-  // Handler para confirmar o agendamento
+  // Handler para confirmar o agendamento, exibindo o popup e redirecionando após 2 segundos
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDate) {
@@ -257,6 +259,12 @@ const Agendamento: React.FC = () => {
       }
       await saveAppointment(availableBarber);
     }
+
+    // Exibe o popup de confirmação (sem sobreposição de fundo) e redireciona após 2 segundos
+    setShowPopup(true);
+    setTimeout(() => {
+      router.push("/");
+    }, 2000);
   };
 
   if (loading || !user) {
@@ -265,10 +273,19 @@ const Agendamento: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      {/* Header */}
       <Header />
 
-      {/* Conteúdo Principal */}
+      {/* Popup de Confirmação sem escurecer o fundo */}
+      {showPopup && (
+        <div className="fixed top-1/3 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-white text-black p-6 rounded shadow">
+            <h2 className="text-xl font-bold mb-4 text-center">
+              Agendamento realizado com sucesso!
+            </h2>
+          </div>
+        </div>
+      )}
+
       <main className="py-20 px-4">
         <h1 className="text-3xl font-bold text-center mb-8">Agendamento</h1>
         <div className="max-w-3xl mx-auto bg-gray-900 p-4 rounded shadow mb-6">
@@ -389,66 +406,31 @@ const Agendamento: React.FC = () => {
                 <>
                   <h3 className="text-lg mt-4">Horários Disponíveis</h3>
                   <div className="grid grid-cols-1 gap-2 mt-2">
-                    {/* Seção Manhã */}
-                    <div>
-                      <h4 className="font-bold">Manhã</h4>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {availableSlots.morning
-                          .filter((slot) => !bookedSlots.includes(slot))
-                          .map((slot) => (
-                            <button
-                              key={slot}
-                              type="button"
-                              onClick={() => setSelectedTimeSlot(slot)}
-                              className={`px-3 py-1 border rounded ${
-                                selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
-                              }`}
-                            >
-                              {slot}
-                            </button>
-                          ))}
+                    {(
+                      ["morning", "afternoon", "evening"] as (keyof typeof availableSlots)[]
+                    ).map((timePeriod) => (
+                      <div key={timePeriod}>
+                        <h4 className="font-bold capitalize">{timePeriod}</h4>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {availableSlots[timePeriod]
+                            .filter((slot: string) => !bookedSlots.includes(slot))
+                            .map((slot: string) => (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => setSelectedTimeSlot(slot)}
+                                className={`px-3 py-1 border rounded ${
+                                  selectedTimeSlot === slot
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-white text-black"
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
+                        </div>
                       </div>
-                    </div>
-                    {/* Seção Tarde */}
-                    <div>
-                      <h4 className="font-bold">Tarde</h4>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {availableSlots.afternoon
-                          .filter((slot) => !bookedSlots.includes(slot))
-                          .map((slot) => (
-                            <button
-                              key={slot}
-                              type="button"
-                              onClick={() => setSelectedTimeSlot(slot)}
-                              className={`px-3 py-1 border rounded ${
-                                selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
-                              }`}
-                            >
-                              {slot}
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                    {/* Seção Noite */}
-                    <div>
-                      <h4 className="font-bold">Noite</h4>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {availableSlots.evening
-                          .filter((slot) => !bookedSlots.includes(slot))
-                          .map((slot) => (
-                            <button
-                              key={slot}
-                              type="button"
-                              onClick={() => setSelectedTimeSlot(slot)}
-                              className={`px-3 py-1 border rounded ${
-                                selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
-                              }`}
-                            >
-                              {slot}
-                            </button>
-                          ))}
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </>
               )}
@@ -471,7 +453,6 @@ const Agendamento: React.FC = () => {
         </div>
       </main>
 
-      {/* Footer */}
       <Footer />
     </div>
   );
