@@ -154,6 +154,13 @@ export default function AdminServicosPage() {
     <div className="min-h-screen bg-black text-white">
       <Header />
       <main className="py-20 px-4">
+        {/* Botão de voltar para /admin */}
+        <button
+          onClick={() => router.push("/admin")}
+          className="mb-4 bg-gray-700 px-4 py-2 rounded hover:bg-gray-600 transition"
+        >
+          Voltar
+        </button>
         <h1 className="text-3xl font-bold mb-6">Gestão de Serviços</h1>
 
         {/* Formulário para adicionar novo serviço */}
