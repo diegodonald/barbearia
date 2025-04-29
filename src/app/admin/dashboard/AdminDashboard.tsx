@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { collection, query, onSnapshot } from "firebase/firestore";
+import { collection, query, onSnapshot, updateDoc, deleteDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -13,7 +13,8 @@ interface Appointment {
   timeSlot: string;
   service: string;
   barber: string;
-  name: string; // Nome do cliente ou do usuário que fez o agendamento
+  name: string; // Nome do cliente ou usuário que fez o agendamento
+  status: string; // "confirmado", "pendente", "cancelado", etc.
 }
 
 const AdminDashboard: React.FC = () => {
@@ -21,6 +22,13 @@ const AdminDashboard: React.FC = () => {
   const router = useRouter();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(true);
+
+  // Estados para os filtros
+  const [filterDate, setFilterDate] = useState<string>("");
+  const [filterBarber, setFilterBarber] = useState<string>("");
+
+  // Estado para controle da edição inline de um agendamento
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
 
   // Verifica se o usuário logado possui role "admin"
   useEffect(() => {
@@ -35,19 +43,62 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     const q = query(collection(db, "agendamentos"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const appsData: Appointment[] = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        dateStr: doc.data().dateStr,
-        timeSlot: doc.data().timeSlot,
-        service: doc.data().service,
-        barber: doc.data().barber,
-        name: doc.data().name,
+      const appsData: Appointment[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        dateStr: docSnap.data().dateStr,
+        timeSlot: docSnap.data().timeSlot,
+        service: docSnap.data().service,
+        barber: docSnap.data().barber,
+        name: docSnap.data().name,
+        status: docSnap.data().status ? docSnap.data().status : "confirmado",
       }));
       setAppointments(appsData);
       setLoadingAppointments(false);
     });
     return () => unsubscribe();
   }, []);
+
+  // Função para iniciar a edição de um agendamento
+  const handleStartEditing = (appt: Appointment) => {
+    setEditingAppointment({ ...appt });
+  };
+
+  // Função para descartar a edição
+  const handleCancelEdit = () => {
+    setEditingAppointment(null);
+  };
+
+  // Função para salvar as alterações do agendamento editado
+  const handleSaveEdit = async () => {
+    if (!editingAppointment) return;
+    try {
+      await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
+        dateStr: editingAppointment.dateStr,
+        timeSlot: editingAppointment.timeSlot,
+        status: editingAppointment.status,
+      });
+      setEditingAppointment(null);
+    } catch (error) {
+      console.error("Erro ao atualizar agendamento:", error);
+    }
+  };
+
+  // Função para cancelar (excluir) um agendamento
+  const handleCancelAppointment = async (appt: Appointment) => {
+    if (!confirm("Deseja realmente cancelar este agendamento?")) return;
+    try {
+      await deleteDoc(doc(db, "agendamentos", appt.id));
+    } catch (error) {
+      console.error("Erro ao cancelar agendamento:", error);
+    }
+  };
+
+  // Aplica os filtros na lista de agendamentos
+  const filteredAppointments = appointments.filter((appt) => {
+    const matchDate = filterDate ? appt.dateStr === filterDate : true;
+    const matchBarber = filterBarber ? appt.barber.toLowerCase().includes(filterBarber.toLowerCase()) : true;
+    return matchDate && matchBarber;
+  });
 
   if (loading || loadingAppointments) {
     return <p>Carregando dados...</p>;
@@ -56,7 +107,31 @@ const AdminDashboard: React.FC = () => {
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Dashboard Administrativo</h1>
-      {appointments.length === 0 ? (
+
+      {/* Seção de Filtros */}
+      <div className="mb-4 flex flex-wrap gap-4">
+        <div>
+          <label className="block mb-1">Filtrar por Data:</label>
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="px-3 py-2 bg-gray-200 text-black rounded"
+          />
+        </div>
+        <div>
+          <label className="block mb-1">Filtrar por Barbeiro:</label>
+          <input
+            type="text"
+            placeholder="Nome do Barbeiro"
+            value={filterBarber}
+            onChange={(e) => setFilterBarber(e.target.value)}
+            className="px-3 py-2 bg-gray-200 text-black rounded"
+          />
+        </div>
+      </div>
+
+      {filteredAppointments.length === 0 ? (
         <p>Nenhum agendamento encontrado.</p>
       ) : (
         <table className="min-w-full border border-gray-200">
@@ -67,18 +142,105 @@ const AdminDashboard: React.FC = () => {
               <th className="px-4 py-2 border">Serviço</th>
               <th className="px-4 py-2 border">Barbeiro</th>
               <th className="px-4 py-2 border">Cliente</th>
+              <th className="px-4 py-2 border">Status</th>
+              <th className="px-4 py-2 border">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {appointments.map((app) => (
-              <tr key={app.id}>
-                <td className="px-4 py-2 border">{app.dateStr}</td>
-                <td className="px-4 py-2 border">{app.timeSlot}</td>
-                <td className="px-4 py-2 border">{app.service}</td>
-                <td className="px-4 py-2 border">{app.barber}</td>
-                <td className="px-4 py-2 border">{app.name}</td>
-              </tr>
-            ))}
+            {filteredAppointments.map((app) =>
+              editingAppointment && editingAppointment.id === app.id ? (
+                // Linha em modo de edição
+                <tr key={app.id}>
+                  <td className="px-4 py-2 border">
+                    <input
+                      type="date"
+                      value={editingAppointment.dateStr}
+                      onChange={(e) =>
+                        setEditingAppointment({
+                          ...editingAppointment,
+                          dateStr: e.target.value,
+                        })
+                      }
+                      className="px-2 py-1 rounded text-black"
+                    />
+                  </td>
+                  <td className="px-4 py-2 border">
+                    <input
+                      type="time"
+                      value={editingAppointment.timeSlot}
+                      onChange={(e) =>
+                        setEditingAppointment({
+                          ...editingAppointment,
+                          timeSlot: e.target.value,
+                        })
+                      }
+                      className="px-2 py-1 rounded text-black"
+                    />
+                  </td>
+                  <td className="px-4 py-2 border">{app.service}</td>
+                  <td className="px-4 py-2 border">{app.barber}</td>
+                  <td className="px-4 py-2 border">{app.name}</td>
+                  <td className="px-4 py-2 border">
+                    <select
+                      value={editingAppointment.status}
+                      onChange={(e) =>
+                        setEditingAppointment({
+                          ...editingAppointment,
+                          status: e.target.value,
+                        })
+                      }
+                      className="px-2 py-1 text-black rounded"
+                    >
+                      <option value="confirmado">Confirmado</option>
+                      <option value="pendente">Pendente</option>
+                      <option value="cancelado">Cancelado</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2 border">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={handleSaveEdit}
+                        className="bg-green-500 px-3 py-1 rounded hover:bg-green-600 transition"
+                      >
+                        Salvar
+                      </button>
+                      <button
+                        onClick={handleCancelEdit}
+                        className="bg-gray-500 px-3 py-1 rounded hover:bg-gray-600 transition"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                // Linha de visualização normal
+                <tr key={app.id}>
+                  <td className="px-4 py-2 border">{app.dateStr}</td>
+                  <td className="px-4 py-2 border">{app.timeSlot}</td>
+                  <td className="px-4 py-2 border">{app.service}</td>
+                  <td className="px-4 py-2 border">{app.barber}</td>
+                  <td className="px-4 py-2 border">{app.name}</td>
+                  <td className="px-4 py-2 border">{app.status}</td>
+                  <td className="px-4 py-2 border">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleStartEditing(app)}
+                        className="bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600 transition"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleCancelAppointment(app)}
+                        className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
+                      >
+                        Cancelar Agendamento
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       )}
