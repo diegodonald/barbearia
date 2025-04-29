@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { collection, query, onSnapshot, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  onSnapshot,
+  updateDoc,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -13,9 +20,16 @@ interface Appointment {
   timeSlot: string;
   service: string;
   barber: string;
-  name: string; // Nome do cliente ou usuário que fez o agendamento
+  name: string; // Nome do cliente ou do usuário que fez o agendamento
   status: string; // "confirmado", "pendente", "cancelado", etc.
 }
+
+// Função para converter data de "YYYY-MM-DD" para "DD/MM/YYYY"
+const formatDate = (dateStr: string): string => {
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+};
 
 const AdminDashboard: React.FC = () => {
   const { user, loading } = useAuth();
@@ -83,7 +97,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Função para cancelar (excluir) um agendamento
+  // Função para cancelar (excluir) um agendamento definitivamente
   const handleCancelAppointment = async (appt: Appointment) => {
     if (!confirm("Deseja realmente cancelar este agendamento?")) return;
     try {
@@ -93,10 +107,36 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Funções para os botões de data "Hoje" e "Amanhã"
+  const setTodayFilter = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    setFilterDate(`${yyyy}-${mm}-${dd}`);
+  };
+
+  const setTomorrowFilter = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const yyyy = tomorrow.getFullYear();
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, "0");
+    const dd = String(tomorrow.getDate()).padStart(2, "0");
+    setFilterDate(`${yyyy}-${mm}-${dd}`);
+  };
+
+  const clearFilters = () => {
+    setFilterDate("");
+    setFilterBarber("");
+  };
+
+  // Cria uma lista única de barbeiros a partir dos agendamentos
+  const uniqueBarbers = Array.from(new Set(appointments.map((app) => app.barber))).sort();
+
   // Aplica os filtros na lista de agendamentos
   const filteredAppointments = appointments.filter((appt) => {
     const matchDate = filterDate ? appt.dateStr === filterDate : true;
-    const matchBarber = filterBarber ? appt.barber.toLowerCase().includes(filterBarber.toLowerCase()) : true;
+    const matchBarber = filterBarber ? appt.barber === filterBarber : true;
     return matchDate && matchBarber;
   });
 
@@ -109,7 +149,7 @@ const AdminDashboard: React.FC = () => {
       <h1 className="text-2xl font-bold mb-4">Dashboard Administrativo</h1>
 
       {/* Seção de Filtros */}
-      <div className="mb-4 flex flex-wrap gap-4">
+      <div className="mb-4 flex flex-wrap gap-4 items-end">
         <div>
           <label className="block mb-1">Filtrar por Data:</label>
           <input
@@ -121,128 +161,156 @@ const AdminDashboard: React.FC = () => {
         </div>
         <div>
           <label className="block mb-1">Filtrar por Barbeiro:</label>
-          <input
-            type="text"
-            placeholder="Nome do Barbeiro"
+          <select
             value={filterBarber}
             onChange={(e) => setFilterBarber(e.target.value)}
             className="px-3 py-2 bg-gray-200 text-black rounded"
-          />
+          >
+            <option value="">Todos</option>
+            {uniqueBarbers.map((barber) => (
+              <option key={barber} value={barber}>
+                {barber}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={setTodayFilter}
+            className="bg-blue-500 px-3 py-2 rounded hover:bg-blue-600 transition"
+          >
+            Hoje
+          </button>
+          <button
+            onClick={setTomorrowFilter}
+            className="bg-blue-500 px-3 py-2 rounded hover:bg-blue-600 transition"
+          >
+            Amanhã
+          </button>
+          <button
+            onClick={clearFilters}
+            className="bg-gray-500 px-3 py-2 rounded hover:bg-gray-600 transition"
+          >
+            Limpar Filtros
+          </button>
         </div>
       </div>
 
       {filteredAppointments.length === 0 ? (
         <p>Nenhum agendamento encontrado.</p>
       ) : (
-        <table className="min-w-full border border-gray-200">
-          <thead>
-            <tr>
-              <th className="px-4 py-2 border">Data</th>
-              <th className="px-4 py-2 border">Horário</th>
-              <th className="px-4 py-2 border">Serviço</th>
-              <th className="px-4 py-2 border">Barbeiro</th>
-              <th className="px-4 py-2 border">Cliente</th>
-              <th className="px-4 py-2 border">Status</th>
-              <th className="px-4 py-2 border">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAppointments.map((app) =>
-              editingAppointment && editingAppointment.id === app.id ? (
-                // Linha em modo de edição
-                <tr key={app.id}>
-                  <td className="px-4 py-2 border">
-                    <input
-                      type="date"
-                      value={editingAppointment.dateStr}
-                      onChange={(e) =>
-                        setEditingAppointment({
-                          ...editingAppointment,
-                          dateStr: e.target.value,
-                        })
-                      }
-                      className="px-2 py-1 rounded text-black"
-                    />
-                  </td>
-                  <td className="px-4 py-2 border">
-                    <input
-                      type="time"
-                      value={editingAppointment.timeSlot}
-                      onChange={(e) =>
-                        setEditingAppointment({
-                          ...editingAppointment,
-                          timeSlot: e.target.value,
-                        })
-                      }
-                      className="px-2 py-1 rounded text-black"
-                    />
-                  </td>
-                  <td className="px-4 py-2 border">{app.service}</td>
-                  <td className="px-4 py-2 border">{app.barber}</td>
-                  <td className="px-4 py-2 border">{app.name}</td>
-                  <td className="px-4 py-2 border">
-                    <select
-                      value={editingAppointment.status}
-                      onChange={(e) =>
-                        setEditingAppointment({
-                          ...editingAppointment,
-                          status: e.target.value,
-                        })
-                      }
-                      className="px-2 py-1 text-black rounded"
-                    >
-                      <option value="confirmado">Confirmado</option>
-                      <option value="pendente">Pendente</option>
-                      <option value="cancelado">Cancelado</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-2 border">
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={handleSaveEdit}
-                        className="bg-green-500 px-3 py-1 rounded hover:bg-green-600 transition"
+        // Envolvemos a tabela com uma div com overflow-x-auto para dispositivos móveis
+        <div className="overflow-x-auto">
+          <table className="min-w-full border border-gray-200">
+            <thead>
+              <tr>
+                <th className="px-4 py-2 border">Data</th>
+                <th className="px-4 py-2 border">Horário</th>
+                <th className="px-4 py-2 border">Serviço</th>
+                <th className="px-4 py-2 border">Barbeiro</th>
+                <th className="px-4 py-2 border">Cliente</th>
+                <th className="px-4 py-2 border">Status</th>
+                <th className="px-4 py-2 border">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAppointments.map((app) =>
+                editingAppointment && editingAppointment.id === app.id ? (
+                  // Linha em modo de edição
+                  <tr key={app.id}>
+                    <td className="px-4 py-2 border">
+                      <input
+                        type="date"
+                        value={editingAppointment.dateStr}
+                        onChange={(e) =>
+                          setEditingAppointment({
+                            ...editingAppointment,
+                            dateStr: e.target.value,
+                          })
+                        }
+                        className="px-2 py-1 rounded text-black"
+                      />
+                    </td>
+                    <td className="px-4 py-2 border">
+                      <input
+                        type="time"
+                        value={editingAppointment.timeSlot}
+                        onChange={(e) =>
+                          setEditingAppointment({
+                            ...editingAppointment,
+                            timeSlot: e.target.value,
+                          })
+                        }
+                        className="px-2 py-1 rounded text-black"
+                      />
+                    </td>
+                    <td className="px-4 py-2 border">{app.service}</td>
+                    <td className="px-4 py-2 border">{app.barber}</td>
+                    <td className="px-4 py-2 border">{app.name}</td>
+                    <td className="px-4 py-2 border">
+                      <select
+                        value={editingAppointment.status}
+                        onChange={(e) =>
+                          setEditingAppointment({
+                            ...editingAppointment,
+                            status: e.target.value,
+                          })
+                        }
+                        className="px-2 py-1 text-black rounded"
                       >
-                        Salvar
-                      </button>
-                      <button
-                        onClick={handleCancelEdit}
-                        className="bg-gray-500 px-3 py-1 rounded hover:bg-gray-600 transition"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                // Linha de visualização normal
-                <tr key={app.id}>
-                  <td className="px-4 py-2 border">{app.dateStr}</td>
-                  <td className="px-4 py-2 border">{app.timeSlot}</td>
-                  <td className="px-4 py-2 border">{app.service}</td>
-                  <td className="px-4 py-2 border">{app.barber}</td>
-                  <td className="px-4 py-2 border">{app.name}</td>
-                  <td className="px-4 py-2 border">{app.status}</td>
-                  <td className="px-4 py-2 border">
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleStartEditing(app)}
-                        className="bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600 transition"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleCancelAppointment(app)}
-                        className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
-                      >
-                        Cancelar Agendamento
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            )}
-          </tbody>
-        </table>
+                        <option value="confirmado">Confirmado</option>
+                        <option value="pendente">Pendente</option>
+                        <option value="cancelado">Cancelado</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-2 border">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={handleSaveEdit}
+                          className="bg-green-500 px-3 py-1 rounded hover:bg-green-600 transition"
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="bg-gray-500 px-3 py-1 rounded hover:bg-gray-600 transition"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  // Linha de visualização normal
+                  <tr key={app.id}>
+                    <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
+                    <td className="px-4 py-2 border">{app.timeSlot}</td>
+                    <td className="px-4 py-2 border">{app.service}</td>
+                    <td className="px-4 py-2 border">{app.barber}</td>
+                    <td className="px-4 py-2 border">{app.name}</td>
+                    <td className="px-4 py-2 border">{app.status}</td>
+                    <td className="px-4 py-2 border">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleStartEditing(app)}
+                          className="bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600 transition"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleCancelAppointment(app)}
+                          className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
+                        >
+                          Cancelar Agendamento
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
