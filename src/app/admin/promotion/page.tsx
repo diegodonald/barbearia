@@ -2,10 +2,10 @@
 
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import AdminDashboard from "./AdminDashboard";
+import AdminPromotionPanel from "./AdminPromotionPanel";
 import { useRouter } from "next/navigation";
 
-export default function AdminDashboardPage() {
+export default function AdminPromotionPage() {
   const router = useRouter();
 
   return (
@@ -18,7 +18,7 @@ export default function AdminDashboardPage() {
         >
           Voltar
         </button>
-        <AdminDashboard />
+        <AdminPromotionPanel />
       </main>
       <Footer />
     </div>

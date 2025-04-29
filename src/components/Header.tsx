@@ -53,14 +53,9 @@ const Cabecalho: React.FC = () => {
             </Link>
           )}
           {isAdmin && (
-            <>
-              <Link href="/admin/dashboard">
-                <span className="hover:text-gray-300 cursor-pointer">Painel</span>
-              </Link>
-              <Link href="/admin">
-                <span className="hover:text-gray-300 cursor-pointer">Promover</span>
-              </Link>
-            </>
+            <Link href="/admin">
+              <span className="hover:text-gray-300 cursor-pointer">Painel</span>
+            </Link>
           )}
         </nav>
 
@@ -188,28 +183,16 @@ const Cabecalho: React.FC = () => {
               </li>
             )}
             {isAdmin && (
-              <>
-                <li>
-                  <Link href="/admin/dashboard">
-                    <span
-                      className="hover:text-gray-300 cursor-pointer"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      Painel
-                    </span>
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/admin">
-                    <span
-                      className="hover:text-gray-300 cursor-pointer"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      Promover
-                    </span>
-                  </Link>
-                </li>
-              </>
+              <li>
+                <Link href="/admin">
+                  <span
+                    className="hover:text-gray-300 cursor-pointer"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Painel
+                  </span>
+                </Link>
+              </li>
             )}
           </ul>
           {/* Mobile Authentication and Reservar Agora Button */}
