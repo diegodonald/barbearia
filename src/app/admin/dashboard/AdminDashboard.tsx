@@ -14,14 +14,16 @@ import {
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { ExtendedUser } from "@/hooks/useAuth"; // Se você exportou o ExtendedUser no hook
+import { ExtendedUser } from "@/hooks/useAuth";
 
+// Atualizamos a interface para incluir o campo barberId
 interface Appointment {
   id: string;
   dateStr: string;
   timeSlot: string;
   service: string;
   barber: string;
+  barberId: string;
   name: string; // Nome do cliente ou do usuário que fez o agendamento
   status: string; // "confirmado", "pendente", "cancelado", etc.
 }
@@ -33,22 +35,30 @@ const formatDate = (dateStr: string): string => {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 };
 
+// Tipo para representar os barbeiros (para o dropdown)
+interface BarberOption {
+  id: string;
+  name: string;
+}
+
 const AdminDashboard: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
+
+  // Estados para agendamentos
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(true);
 
-  // Estados para os filtros
+  // Estados dos filtros
   const [filterDate, setFilterDate] = useState<string>("");
   const [filterBarber, setFilterBarber] = useState<string>("");
 
-  // Estado para controle da edição inline de um agendamento
+  // Estado para controle da edição inline
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
 
-  // Estados para armazenar as opções dos dropdowns
+  // Estados para opções dos dropdowns (Serviços e Barbeiros)
   const [serviceOptions, setServiceOptions] = useState<string[]>([]);
-  const [barberOptions, setBarberOptions] = useState<string[]>([]);
+  const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
 
   // Verifica se o usuário logado possui role "admin"
   useEffect(() => {
@@ -59,7 +69,7 @@ const AdminDashboard: React.FC = () => {
     }
   }, [loading, user, router]);
 
-  // Busca os agendamentos do Firestore
+  // Busca agendamentos
   useEffect(() => {
     const q = query(collection(db, "agendamentos"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -69,6 +79,7 @@ const AdminDashboard: React.FC = () => {
         timeSlot: docSnap.data().timeSlot,
         service: docSnap.data().service,
         barber: docSnap.data().barber,
+        barberId: docSnap.data().barberId || "", // garante o campo, se houver
         name: docSnap.data().name,
         status: docSnap.data().status ? docSnap.data().status : "confirmado",
       }));
@@ -78,7 +89,7 @@ const AdminDashboard: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Busca as opções de serviços cadastrados
+  // Busca as opções de serviços a partir da coleção "servicos"
   useEffect(() => {
     const fetchServiceOptions = async () => {
       try {
@@ -93,13 +104,16 @@ const AdminDashboard: React.FC = () => {
     fetchServiceOptions();
   }, []);
 
-  // Busca as opções dos barbeiros cadastrados (usuários com role "barber")
+  // Busca as opções dos barbeiros (usuários com role "barber")
   useEffect(() => {
     const fetchBarberOptions = async () => {
       try {
         const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
         const snapshot = await getDocs(q);
-        const barbers = snapshot.docs.map((doc) => doc.data().name) as string[];
+        const barbers = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name,
+        })) as BarberOption[];
         setBarberOptions(barbers);
       } catch (error) {
         console.error("Erro ao buscar barbeiros:", error);
@@ -108,7 +122,7 @@ const AdminDashboard: React.FC = () => {
     fetchBarberOptions();
   }, []);
 
-  // Funções para os botões de data "Hoje" e "Amanhã"
+  // Funções para os botões "Hoje", "Amanhã" e limpar filtros
   const setTodayFilter = () => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -131,27 +145,27 @@ const AdminDashboard: React.FC = () => {
     setFilterBarber("");
   };
 
-  // Cria uma lista única de barbeiros a partir dos agendamentos para o filtro
+  // Lista única de barbeiros para o filtro (baseada no campo "barber")
   const uniqueBarbers = Array.from(new Set(appointments.map((app) => app.barber))).sort();
 
-  // Aplica os filtros na lista de agendamentos
+  // Aplica filtros aos agendamentos
   const filteredAppointments = appointments.filter((appt) => {
     const matchDate = filterDate ? appt.dateStr === filterDate : true;
     const matchBarber = filterBarber ? appt.barber === filterBarber : true;
     return matchDate && matchBarber;
   });
 
-  // Função para iniciar a edição de um agendamento
+  // Função para iniciar edição de um agendamento
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
   };
 
-  // Função para descartar a edição
+  // Função para cancelar a edição
   const handleCancelEdit = () => {
     setEditingAppointment(null);
   };
 
-  // Função para salvar as alterações do agendamento editado
+  // Ao salvar a edição, atualiza no Firestore incluindo os campos service, barber e barberId
   const handleSaveEdit = async () => {
     if (!editingAppointment) return;
     try {
@@ -160,6 +174,7 @@ const AdminDashboard: React.FC = () => {
         timeSlot: editingAppointment.timeSlot,
         service: editingAppointment.service,
         barber: editingAppointment.barber,
+        barberId: editingAppointment.barberId, // Fundamental para o módulo agendamento
         status: editingAppointment.status,
       });
       setEditingAppointment(null);
@@ -168,7 +183,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Função para cancelar (excluir) um agendamento definitivamente
+  // Função de exclusão de agendamento
   const handleCancelAppointment = async (appt: Appointment) => {
     if (!confirm("Deseja realmente cancelar este agendamento?")) return;
     try {
@@ -300,18 +315,25 @@ const AdminDashboard: React.FC = () => {
                     </td>
                     <td className="px-4 py-2 border">
                       <select
-                        value={editingAppointment.barber}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            barber: e.target.value,
-                          })
-                        }
+                        value={editingAppointment.barberId}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          const selectedBarberOption = barberOptions.find(
+                            (b) => b.id === selectedId
+                          );
+                          if (selectedBarberOption) {
+                            setEditingAppointment({
+                              ...editingAppointment,
+                              barber: selectedBarberOption.name,
+                              barberId: selectedBarberOption.id,
+                            });
+                          }
+                        }}
                         className="px-2 py-1 rounded text-black bg-gray-100"
                       >
-                        {barberOptions.map((b, idx) => (
-                          <option key={idx} value={b}>
-                            {b}
+                        {barberOptions.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
                           </option>
                         ))}
                       </select>

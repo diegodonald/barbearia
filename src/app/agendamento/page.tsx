@@ -40,12 +40,14 @@ const Agendamento: React.FC = () => {
   // Controle do fluxo de etapas
   const [step, setStep] = useState<number>(1);
 
-  // Etapa 1: Seleção do Serviço
+  // Etapa 1: Seleção do Serviço (agora através de dropdown, dinâmico)
   const [selectedService, setSelectedService] = useState<string>("");
+  // Novo estado para armazenar as opções de serviço cadastradas
+  const [serviceOptions, setServiceOptions] = useState<string[]>([]);
 
   // Etapa 2: Seleção do Barbeiro – pode ser um objeto do tipo Barber, a string "Qualquer" ou ""
   const [selectedBarber, setSelectedBarber] = useState<Barber | "Qualquer" | "">("");
-
+  
   // Etapa 3: Seleção de Data e Hora
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
@@ -115,6 +117,22 @@ const Agendamento: React.FC = () => {
       }
     }
     fetchBarbers();
+  }, []);
+
+  // Busca as opções de serviços cadastrados (a partir da coleção "servicos")
+  useEffect(() => {
+    async function fetchServiceOptions() {
+      try {
+        const q = query(collection(db, "servicos"));
+        const snapshot = await getDocs(q);
+        const services = snapshot.docs.map((doc) => doc.data().name) as string[];
+        setServiceOptions(services);
+        console.log("Serviços encontrados:", services);
+      } catch (error) {
+        console.error("Erro ao buscar serviços:", error);
+      }
+    }
+    fetchServiceOptions();
   }, []);
 
   // onSnapshot para atualizar em tempo real os horários ocupados, baseado na data e no barbeiro selecionados
@@ -260,7 +278,7 @@ const Agendamento: React.FC = () => {
       await saveAppointment(availableBarber);
     }
 
-    // Exibe o popup de confirmação (sem sobreposição de fundo) e redireciona após 2 segundos
+    // Exibe o popup de confirmação e redireciona após 2 segundos
     setShowPopup(true);
     setTimeout(() => {
       router.push("/");
@@ -298,40 +316,19 @@ const Agendamento: React.FC = () => {
           {step === 1 && (
             <>
               <h2 className="text-xl mb-4">Selecione o Serviço</h2>
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedService("Corte")}
-                  className={`w-full p-2 border rounded ${
-                    selectedService === "Corte"
-                      ? "bg-blue-500 text-white"
-                      : "bg-white text-black"
-                  }`}
+              <div>
+                <select
+                  value={selectedService}
+                  onChange={(e) => setSelectedService(e.target.value)}
+                  className="w-full px-3 py-2 border rounded bg-white text-black"
                 >
-                  Corte
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedService("Barba")}
-                  className={`w-full p-2 border rounded ${
-                    selectedService === "Barba"
-                      ? "bg-blue-500 text-white"
-                      : "bg-white text-black"
-                  }`}
-                >
-                  Barba
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedService("Corte e Barba")}
-                  className={`w-full p-2 border rounded ${
-                    selectedService === "Corte e Barba"
-                      ? "bg-blue-500 text-white"
-                      : "bg-white text-black"
-                  }`}
-                >
-                  Corte e Barba
-                </button>
+                  <option value="">Selecione um serviço</option>
+                  {serviceOptions.map((s, idx) => (
+                    <option key={idx} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="flex justify-end mt-6">
                 <button onClick={handleNext} className="bg-blue-500 text-white px-4 py-2 rounded">
