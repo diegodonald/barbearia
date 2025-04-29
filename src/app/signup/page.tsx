@@ -5,6 +5,8 @@ import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 
 const Signup: React.FC = () => {
   // Estado para armazenar o nome do usuário
@@ -43,39 +45,51 @@ const Signup: React.FC = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <form onSubmit={handleSignup} className="bg-white p-6 rounded shadow-md w-full max-w-sm">
-        <h2 className="text-2xl mb-4 text-center">Cadastre-se</h2>
-        {error && <p className="text-red-500 mb-4 text-center">{error}</p>}
-        {/* Campo para o nome */}
-        <input
-          type="text"
-          placeholder="Digite seu nome"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          className="border p-2 w-full mb-4"
-        />
-        <input
-          type="email"
-          placeholder="Digite seu email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="border p-2 w-full mb-4"
-        />
-        <input
-          type="password"
-          placeholder="Digite sua senha"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="border p-2 w-full mb-4"
-        />
-        <button type="submit" className="bg-blue-500 text-white p-2 w-full rounded">
-          Cadastrar
-        </button>
-      </form>
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      {/* Cabeçalho */}
+      <Header />
+
+      {/* Conteúdo Principal */}
+      <main className="flex flex-col items-center justify-center flex-grow py-20 px-4">
+        <form onSubmit={handleSignup} className="bg-gray-900 p-6 rounded shadow-md w-full max-w-sm">
+          <h2 className="text-2xl mb-4 text-center">Cadastre-se</h2>
+          {error && <p className="text-red-500 mb-4 text-center">{error}</p>}
+          {/* Campo para o nome */}
+          <input
+            type="text"
+            placeholder="Digite seu nome"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="bg-gray-800 border border-gray-700 px-3 py-2 w-full mb-4 rounded focus:outline-none focus:border-yellow-500"
+          />
+          <input
+            type="email"
+            placeholder="Digite seu email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="bg-gray-800 border border-gray-700 px-3 py-2 w-full mb-4 rounded focus:outline-none focus:border-yellow-500"
+          />
+          <input
+            type="password"
+            placeholder="Digite sua senha"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="bg-gray-800 border border-gray-700 px-3 py-2 w-full mb-4 rounded focus:outline-none focus:border-yellow-500"
+          />
+          <button
+            type="submit"
+            className="bg-blue-500 text-white px-4 py-2 w-full rounded hover:bg-blue-600 transition"
+          >
+            Cadastrar
+          </button>
+        </form>
+      </main>
+
+      {/* Rodapé */}
+      <Footer />
     </div>
   );
 };
