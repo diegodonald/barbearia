@@ -10,6 +10,10 @@ const Cabecalho: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const { user, loading } = useAuth();
 
+  // Verifica se o usuário é admin e se é barbeiro
+  const isAdmin = user && user.role === "admin";
+  const isBarber = user && user.role === "barber";
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -43,6 +47,21 @@ const Cabecalho: React.FC = () => {
           <Link href="/agendamento">
             <span className="hover:text-gray-300 cursor-pointer">Reservar</span>
           </Link>
+          {isBarber && (
+            <Link href="/barbeiro">
+              <span className="hover:text-gray-300 cursor-pointer">Sua Agenda</span>
+            </Link>
+          )}
+          {isAdmin && (
+            <>
+              <Link href="/admin/dashboard">
+                <span className="hover:text-gray-300 cursor-pointer">Painel</span>
+              </Link>
+              <Link href="/admin">
+                <span className="hover:text-gray-300 cursor-pointer">Promover</span>
+              </Link>
+            </>
+          )}
         </nav>
 
         {/* Desktop Authentication and Reservar Agora Button */}
@@ -156,6 +175,42 @@ const Cabecalho: React.FC = () => {
                 </span>
               </Link>
             </li>
+            {isBarber && (
+              <li>
+                <Link href="/barbeiro">
+                  <span
+                    className="hover:text-gray-300 cursor-pointer"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Sua Agenda
+                  </span>
+                </Link>
+              </li>
+            )}
+            {isAdmin && (
+              <>
+                <li>
+                  <Link href="/admin/dashboard">
+                    <span
+                      className="hover:text-gray-300 cursor-pointer"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      Painel
+                    </span>
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/admin">
+                    <span
+                      className="hover:text-gray-300 cursor-pointer"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      Promover
+                    </span>
+                  </Link>
+                </li>
+              </>
+            )}
           </ul>
           {/* Mobile Authentication and Reservar Agora Button */}
           <div className="mt-4 flex flex-col space-y-2">

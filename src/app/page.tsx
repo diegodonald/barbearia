@@ -11,13 +11,13 @@ export default function Home() {
       <main className="flex flex-col items-center justify-center py-20 px-4">
         <div className="text-center">
           <h1 className="text-5xl font-extrabold mb-4">
-            Barbearia 5 Estrelas – Cortes Perfeitos, Sempre!
+            |Diego´s Barber – Cortes Perfeitos, Sempre!
           </h1>
           <p className="text-xl mb-8">
             Desconto de R$5 para estudantes! Somente de segunda a quinta!
           </p>
           <a
-            href="/reservar"
+            href="/agendamento"
             className="bg-yellow-500 text-black font-semibold px-6 py-3 rounded hover:bg-yellow-600 transition cursor-pointer"
           >
             Reservar Agora
@@ -30,11 +30,11 @@ export default function Home() {
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4">Localização e Horário</h2>
           <p className="mb-2">
-            <strong>HouseBarberia</strong>
+            <strong>Diego´s Barber</strong>
           </p>
-          <p className="mb-2">205 Moggil Rd, Taringa, Queensland 4068</p>
-          <p className="mb-2">(07) 3150 9377</p>
-          <p className="mb-2">Housebarberia2022@gmail.com</p>
+          <p className="mb-2">Rua Nirvana, 236, Passo Dos Fortes</p>
+          <p className="mb-2">(49) 98908 1347</p>
+          <p className="mb-2">diegodonald@gmail.com</p>
           <a
             href="https://goo.gl/maps/..."
             target="_blank"
