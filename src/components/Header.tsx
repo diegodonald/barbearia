@@ -4,11 +4,13 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
+import { useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 
 const Cabecalho: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const { user, loading } = useAuth();
+  const router = useRouter();
 
   // Verifica se o usuário é admin e se é barbeiro
   const isAdmin = user && user.role === "admin";
@@ -17,6 +19,8 @@ const Cabecalho: React.FC = () => {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      // Redireciona para a página de login após o logout
+      router.push("/login");
     } catch (error) {
       console.error("Erro ao deslogar:", error);
     }
