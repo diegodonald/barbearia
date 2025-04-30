@@ -8,7 +8,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
 const Login: React.FC = () => {
-  // Estados para email, senha, visibilidade da senha e possíveis erros
+  // Estados para email, senha, visibilidade da senha e mensagem de erro
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -17,12 +17,19 @@ const Login: React.FC = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(""); // Limpa erro anterior
     try {
       await signInWithEmailAndPassword(auth, email, password);
       router.push("/");
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
+    } catch (err: any) {
+      // Verifica se o erro está relacionado a credenciais inválidas
+      if (
+        err.code === "auth/wrong-password" ||
+        err.code === "auth/user-not-found" ||
+        err.code === "auth/invalid-email" ||
+        err.code === "auth/invalid-credential"
+      ) {
+        setError("Usuário ou senha incorretos. Por favor, tente novamente.");
       } else {
         setError("Ocorreu um erro inesperado ao tentar efetuar o login.");
       }
@@ -55,7 +62,7 @@ const Login: React.FC = () => {
             />
           </div>
 
-          {/* Grupo do Campo de Senha (Input + Botão) */}
+          {/* Grupo do Campo de Senha (Input + Botão de Visualização) */}
           <div className="mb-4">
             <div className="flex border border-gray-700 rounded overflow-hidden">
               <input
@@ -72,7 +79,7 @@ const Login: React.FC = () => {
                 className="w-12 flex items-center justify-center bg-gray-800 text-gray-400 transition duration-300 hover:bg-gray-700"
               >
                 {showPassword ? (
-                  // Ícone para ocultar a senha (EyeOff) do Heroicons Outline
+                  // Ícone para ocultar a senha (EyeOff)
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     className="h-6 w-6"
@@ -84,13 +91,11 @@ const Login: React.FC = () => {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M13.875 18.825A10.05 10.05 0 0112 19c-5.523 0-10-4.477-10-10 
-                      0-1.086.18-2.133.513-3.105M6.343 6.343a8 8 0 0111.314 0M16.24 
-                      16.24A8 8 0 018.76 8.76m2.121 2.121L3 3m18 18l-3.197-3.197"
+                      d="M13.875 18.825A10.05 10.05 0 0112 19c-5.523 0-10-4.477-10-10 0-1.086.18-2.133.513-3.105M6.343 6.343a8 8 0 0111.314 0M16.24 16.24A8 8 0 018.76 8.76m2.121 2.121L3 3m18 18l-3.197-3.197"
                     />
                   </svg>
                 ) : (
-                  // Ícone para mostrar a senha (Eye) do Heroicons Outline
+                  // Ícone para mostrar a senha (Eye)
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     className="h-6 w-6"
@@ -108,8 +113,7 @@ const Login: React.FC = () => {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 
-                      8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                     />
                   </svg>
                 )}
