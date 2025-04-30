@@ -7,13 +7,15 @@ import { doc, getDoc, setDoc, updateDoc, collection, onSnapshot, addDoc, deleteD
 import { db } from "@/lib/firebase";
 import "react-datepicker/dist/react-datepicker.css";
 
+// Define a interface para um dia da semana
 interface DayConfig {
   open?: string;
   close?: string;
   active: boolean;
 }
 
-type OperatingHours = {
+// Interface para as configurações globais de horários
+export type OperatingHours = {
   diasSemana: {
     segunda: DayConfig;
     terça: DayConfig;
@@ -25,11 +27,14 @@ type OperatingHours = {
   };
 };
 
+// Atualize a interface de exceção para incluir, se necessário, os horários (caso a exceção libere um dia inativo)
 interface Exception {
   id?: string;
-  date: string; // no formato "YYYY-MM-DD"
+  date: string;    // formato "YYYY-MM-DD"
   status: "blocked" | "available";
   message?: string;
+  open?: string;   // horário de abertura para exceção (opcional)
+  close?: string;  // horário de fechamento para exceção (opcional)
 }
 
 export default function OperatingHoursPage() {
@@ -38,7 +43,14 @@ export default function OperatingHoursPage() {
 
   // Estado para as exceções
   const [exceptions, setExceptions] = useState<Exception[]>([]);
-  const [newException, setNewException] = useState<Exception>({ date: "", status: "blocked", message: "" });
+  // Ao criar uma nova exceção, se o status for "available", poderemos definir os horários
+  const [newException, setNewException] = useState<Exception>({
+    date: "",
+    status: "blocked",
+    message: "",
+    open: "",
+    close: "",
+  });
 
   // Buscar configurações globais no Firestore
   useEffect(() => {
@@ -47,7 +59,7 @@ export default function OperatingHoursPage() {
       if (docSnap.exists()) {
         setOperatingHours(docSnap.data() as OperatingHours);
       } else {
-        // Cria configuração padrão se não existe
+        // Cria configuração padrão caso não exista
         const defaultConfig: OperatingHours = {
           diasSemana: {
             segunda: { open: "08:00", close: "18:00", active: true },
@@ -65,7 +77,7 @@ export default function OperatingHoursPage() {
       setLoading(false);
     });
 
-    // Configura listener para exceções
+    // Configura listener para as exceções (subcoleção)
     const exceptionsRef = collection(db, "configuracoes", "operatingHours", "exceptions");
     const unsubscribe = onSnapshot(exceptionsRef, (snapshot) => {
       const exList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } )) as Exception[];
@@ -93,10 +105,15 @@ export default function OperatingHoursPage() {
       alert("Informe uma data para a exceção.");
       return;
     }
+    // Se o status for "available", verifique se os horários foram informados (para liberar um dia inativo)
+    if (newException.status === "available" && (!newException.open || !newException.close)) {
+      alert("Para liberar um dia inativo, informe os horários de abertura e fechamento.");
+      return;
+    }
     try {
       const exceptionsRef = collection(db, "configuracoes", "operatingHours", "exceptions");
       await addDoc(exceptionsRef, newException);
-      setNewException({ date: "", status: "blocked", message: "" });
+      setNewException({ date: "", status: "blocked", message: "", open: "", close: "" });
     } catch (error) {
       console.error("Erro ao adicionar exceção:", error);
     }
@@ -193,9 +210,9 @@ export default function OperatingHoursPage() {
         {/* Seção de Horários Globais */}
         <section>
           <h2 className="text-2xl font-semibold mb-4">Horários Globais de Funcionamento</h2>
-          {(
-            Object.keys(operatingHours.diasSemana) as (keyof OperatingHours["diasSemana"])[]
-          ).map((day) => renderDayForm(day))}
+          {(Object.keys(operatingHours.diasSemana) as (keyof OperatingHours["diasSemana"])[]).map(
+            (day) => renderDayForm(day)
+          )}
           <button
             onClick={handleSave}
             className="mt-4 bg-blue-500 px-4 py-2 rounded hover:bg-blue-600 transition"
@@ -213,7 +230,9 @@ export default function OperatingHoursPage() {
               <input
                 type="date"
                 value={newException.date}
-                onChange={(e) => setNewException({ ...newException, date: e.target.value })}
+                onChange={(e) =>
+                  setNewException({ ...newException, date: e.target.value })
+                }
                 className="px-2 py-1 text-black rounded"
               />
             </div>
@@ -230,12 +249,41 @@ export default function OperatingHoursPage() {
                 <option value="available">Liberado</option>
               </select>
             </div>
+            {/* Se o status for "available", exibe inputs para definir os horários */}
+            {newException.status === "available" && (
+              <div className="flex gap-4 items-center mb-2">
+                <div>
+                  <label className="block">Horário de Abertura:</label>
+                  <input
+                    type="time"
+                    value={newException.open || ""}
+                    onChange={(e) =>
+                      setNewException({ ...newException, open: e.target.value })
+                    }
+                    className="px-2 py-1 text-black rounded"
+                  />
+                </div>
+                <div>
+                  <label className="block">Horário de Fechamento:</label>
+                  <input
+                    type="time"
+                    value={newException.close || ""}
+                    onChange={(e) =>
+                      setNewException({ ...newException, close: e.target.value })
+                    }
+                    className="px-2 py-1 text-black rounded"
+                  />
+                </div>
+              </div>
+            )}
             <div className="mb-2">
               <label className="block">Mensagem (opcional):</label>
               <input
                 type="text"
                 value={newException.message}
-                onChange={(e) => setNewException({ ...newException, message: e.target.value })}
+                onChange={(e) =>
+                  setNewException({ ...newException, message: e.target.value })
+                }
                 className="w-full px-2 py-1 text-black rounded"
               />
             </div>
@@ -255,7 +303,11 @@ export default function OperatingHoursPage() {
                 {exceptions.map((ex) => (
                   <li key={ex.id} className="mb-2 flex justify-between items-center bg-gray-800 p-2 rounded">
                     <span>
-                      {ex.date} — {ex.status} {ex.message ? `(${ex.message})` : ""}
+                      {ex.date} — {ex.status}{" "}
+                      {ex.status === "available" && ex.open && ex.close
+                        ? `(Abertura: ${ex.open}, Fechamento: ${ex.close})`
+                        : ""}{" "}
+                      {ex.message ? `(${ex.message})` : ""}
                     </span>
                     <button
                       onClick={() => ex.id && handleDeleteException(ex.id)}

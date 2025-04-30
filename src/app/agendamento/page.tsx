@@ -104,7 +104,7 @@ interface Barber {
 }
 
 // Função auxiliar que verifica se o dia selecionado está disponível para agendamento.
-// Agora, se houver exceção com status "blocked", retorna false; se houver "available", retorna true.
+// Prioriza exceções: se houver exceção com status "blocked", retorna false; se "available", retorna true.
 function isDayAvailable(
   selectedDate: Date,
   operatingHours: OperatingHours,
@@ -124,7 +124,6 @@ function isDayAvailable(
       return true;
     }
   }
-
   console.log(`Dia ${normalized} sem exceção. active=${dayConfig.active}`);
   return dayConfig.active;
 }
@@ -132,8 +131,6 @@ function isDayAvailable(
 const Agendamento: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
-
-  // Hook para configuração global de horários e exceções
   const { operatingHours, exceptions } = useOperatingHours();
 
   // Controle do fluxo de etapas
@@ -242,14 +239,13 @@ const Agendamento: React.FC = () => {
       const normalizedDateStr = getLocalDateString(selectedDate);
       console.log("Data selecionada (local):", normalizedDateStr);
 
-      // Verifica se o dia está disponível para agendamento (prioriza exceções)
+      // Verifica disponibilidade do dia
       if (operatingHours) {
         if (!isDayAvailable(selectedDate, operatingHours, exceptions)) {
           setFeedback("O agendamento não está disponível para a data selecionada.");
           setBookedSlots([]);
           return;
         } else {
-          // Se o dia estiver disponível, limpa eventuais mensagens anteriores
           setFeedback("");
         }
       }
@@ -378,7 +374,35 @@ const Agendamento: React.FC = () => {
       return;
     }
 
-    // Calcula os slots necessários com base na duração do serviço
+    // Para gerar os slots, usamos os horários da exceção se existir override,
+    // caso contrário, os horários globais.
+    let openTime: string | undefined;
+    let closeTime: string | undefined;
+    const normalized = getLocalDateString(selectedDate);
+    const exception = exceptions.find(
+      (ex) => ex.date === normalized && ex.status === "available" && ex.open && ex.close
+    );
+    if (exception) {
+      openTime = exception.open;
+      closeTime = exception.close;
+      console.log(`Usando horários de exceção: ${openTime} às ${closeTime}`);
+    } else {
+      const dayName = getDayName(selectedDate);
+      const dayConfig: DayConfig = operatingHours.diasSemana[dayName];
+      if (dayConfig.active && dayConfig.open && dayConfig.close) {
+        openTime = dayConfig.open;
+        closeTime = dayConfig.close;
+      }
+    }
+    if (!openTime || !closeTime) {
+      setFeedback("Horários não configurados para o dia selecionado.");
+      return;
+    }
+
+    // Gera os slots dinamicamente com base nos horários definidos (override ou globais)
+    const dynamicSlots = generateSlots(openTime, closeTime, 30);
+
+    // Calcula quantos slots são necessários para o serviço
     const slotsNeeded = Math.ceil(selectedService.duration / 30);
     const index = dynamicSlots.indexOf(selectedTimeSlot);
     if (index === -1 || index + slotsNeeded > dynamicSlots.length) {
@@ -409,7 +433,7 @@ const Agendamento: React.FC = () => {
       for (const barber of barberList) {
         const q = query(
           collection(db, "agendamentos"),
-          where("dateStr", "==", getLocalDateString(selectedDate)),
+          where("dateStr", "==", normalized),
           where("barberId", "==", barber.id)
         );
         const snapshot = await getDocs(q);
@@ -443,7 +467,7 @@ const Agendamento: React.FC = () => {
     }, 2000);
   };
 
-  // Variáveis para geração dinâmica dos slots
+  // Variáveis para geração dinâmica dos slots para exibição na UI
   let dynamicSlots: string[] = [];
   let slotsToDisplay: { manha: string[]; tarde: string[]; noite: string[] } = {
     manha: [],
@@ -451,10 +475,26 @@ const Agendamento: React.FC = () => {
     noite: [],
   };
   if (selectedDate && operatingHours) {
-    const dayName = getDayName(selectedDate);
-    const dayConfig: DayConfig = operatingHours.diasSemana[dayName];
-    if (dayConfig.active && dayConfig.open && dayConfig.close) {
-      dynamicSlots = generateSlots(dayConfig.open, dayConfig.close, 30);
+    const normalized = getLocalDateString(selectedDate);
+    // Se houver exceção com override, gera os slots com os horários definidos na exceção
+    const exception = exceptions.find(
+      (ex) => ex.date === normalized && ex.status === "available" && ex.open && ex.close
+    );
+    let openTime: string | undefined;
+    let closeTime: string | undefined;
+    if (exception) {
+      openTime = exception.open;
+      closeTime = exception.close;
+    } else {
+      const dayName = getDayName(selectedDate);
+      const dayConfig: DayConfig = operatingHours.diasSemana[dayName];
+      if (dayConfig.active && dayConfig.open && dayConfig.close) {
+        openTime = dayConfig.open;
+        closeTime = dayConfig.close;
+      }
+    }
+    if (openTime && closeTime) {
+      dynamicSlots = generateSlots(openTime, closeTime, 30);
       slotsToDisplay = groupSlots(dynamicSlots);
     }
   }
@@ -591,53 +631,46 @@ const Agendamento: React.FC = () => {
                   required
                 />
               </div>
-              {/* Só exibe os slots se o dia estiver disponível */}
-              {selectedDate &&
-                operatingHours &&
-                isDayAvailable(selectedDate, operatingHours, exceptions) && (
-                  <>
-                    <h3 className="text-lg mt-4">Horários Disponíveis</h3>
-                    <div className="grid grid-cols-1 gap-2 mt-2">
-                      {Object.entries(slotsToDisplay).map(([periodKey, slots]) => (
-                        <div key={periodKey}>
-                          <h4 className="font-bold capitalize">
-                            {periodKey === "manha"
-                              ? "manhã"
-                              : periodKey === "tarde"
-                              ? "tarde"
-                              : "noite"}
-                          </h4>
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            {slots
-                              .filter((slot) => !bookedSlots.includes(slot))
-                              .map((slot) => (
-                                <button
-                                  key={slot}
-                                  type="button"
-                                  onClick={() => setSelectedTimeSlot(slot)}
-                                  className={`px-3 py-1 border rounded ${
-                                    selectedTimeSlot === slot
-                                      ? "bg-blue-500 text-white"
-                                      : "bg-white text-black"
-                                  }`}
-                                >
-                                  {slot}
-                                </button>
-                              ))}
-                          </div>
+              {selectedDate && operatingHours && isDayAvailable(selectedDate, operatingHours, exceptions) ? (
+                <>
+                  <h3 className="text-lg mt-4">Horários Disponíveis</h3>
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    {Object.entries(slotsToDisplay).map(([periodKey, slots]) => (
+                      <div key={periodKey}>
+                        <h4 className="font-bold capitalize">
+                          {periodKey === "manha"
+                            ? "manhã"
+                            : periodKey === "tarde"
+                            ? "tarde"
+                            : "noite"}
+                        </h4>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {slots
+                            .filter((slot) => !bookedSlots.includes(slot))
+                            .map((slot) => (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => setSelectedTimeSlot(slot)}
+                                className={`px-3 py-1 border rounded ${
+                                  selectedTimeSlot === slot
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-white text-black"
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
                         </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              {/* Se o dia não estiver disponível, exibe somente a mensagem de feedback */}
-              {selectedDate &&
-                operatingHours &&
-                !isDayAvailable(selectedDate, operatingHours, exceptions) && (
-                  <div className="text-red-500 text-center mt-4">
-                    {feedback}
+                      </div>
+                    ))}
                   </div>
-                )}
+                </>
+              ) : selectedDate && operatingHours && !isDayAvailable(selectedDate, operatingHours, exceptions) ? (
+                <div className="text-red-500 text-center mt-4">
+                  O agendamento não está disponível para a data selecionada.
+                </div>
+              ) : null}
               <div className="flex justify-between mt-6">
                 <button
                   type="button"
@@ -646,26 +679,15 @@ const Agendamento: React.FC = () => {
                 >
                   Voltar
                 </button>
-                <button
-                  type="submit"
-                  className="bg-blue-500 text-white px-4 py-2 rounded"
-                >
+                <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
                   Confirmar Agendamento
                 </button>
               </div>
             </form>
           )}
-
-          {feedback && !(
-            selectedDate &&
-            operatingHours &&
-            !isDayAvailable(selectedDate, operatingHours, exceptions)
-          ) && (
-            <p className="mt-4 text-center">{feedback}</p>
-          )}
+          {/* Removido o bloco extra de feedback para não persistir mensagem em datas disponíveis */}
         </div>
       </main>
-
       <Footer />
     </div>
   );
