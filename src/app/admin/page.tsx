@@ -33,6 +33,12 @@ const AdminMain: React.FC = () => {
             >
               Cadastro de Serviços
             </Link>
+            <Link
+              href="/admin/operating"
+              className="w-full md:w-1/2 text-center py-3 bg-green-500 text-white rounded hover:bg-green-600 transition"
+            >
+              Configuração de Horários
+            </Link>
           </div>
         </div>
       </div>
