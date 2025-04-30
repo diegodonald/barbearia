@@ -5,7 +5,7 @@ import useAuth from "@/hooks/useAuth";
 
 export default function Footer() {
   const { user } = useAuth();
-  
+
   // Verifica se o usuário é admin ou barbeiro
   const isAdmin = user && user.role === "admin";
   const isBarber = user && user.role === "barber";
@@ -30,9 +30,16 @@ export default function Footer() {
           <Link href="/reservar">
             <span className="hover:text-gray-400 cursor-pointer">Reservar</span>
           </Link>
+          {/* Exibe "Meus Agendamentos" para usuários que não são admin nem barbeiro */}
           {user && !(isBarber || isAdmin) && (
             <Link href="/meus-agendamentos">
               <span className="hover:text-gray-400 cursor-pointer">Meus Agendamentos</span>
+            </Link>
+          )}
+          {/* Exibe "Sua Agenda" para usuários Barbeiros */}
+          {isBarber && (
+            <Link href="/barbeiro">
+              <span className="hover:text-gray-400 cursor-pointer">Sua Agenda</span>
             </Link>
           )}
         </nav>

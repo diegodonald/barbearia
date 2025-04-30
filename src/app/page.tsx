@@ -11,7 +11,7 @@ export default function Home() {
       <main className="flex flex-col items-center justify-center py-20 px-4">
         <div className="text-center">
           <h1 className="text-5xl font-extrabold mb-4">
-            |Diego´s Barber – Cortes Perfeitos, Sempre!
+            Diego´s Barber – Cortes Perfeitos, Sempre!
           </h1>
           <p className="text-xl mb-8">
             Desconto de R$5 para estudantes! Somente de segunda a quinta!
