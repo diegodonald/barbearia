@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import useAuth from "@/hooks/useAuth";
 
 export default function Footer() {
+  const { user } = useAuth();
+  
+  // Verifica se o usuário é admin ou barbeiro
+  const isAdmin = user && user.role === "admin";
+  const isBarber = user && user.role === "barber";
+
   return (
     <footer className="bg-black text-white py-8 px-4">
       <div className="max-w-4xl mx-auto">
@@ -23,6 +30,11 @@ export default function Footer() {
           <Link href="/reservar">
             <span className="hover:text-gray-400 cursor-pointer">Reservar</span>
           </Link>
+          {user && !(isBarber || isAdmin) && (
+            <Link href="/meus-agendamentos">
+              <span className="hover:text-gray-400 cursor-pointer">Meus Agendamentos</span>
+            </Link>
+          )}
         </nav>
 
         {/* Formulário de Inscrição */}

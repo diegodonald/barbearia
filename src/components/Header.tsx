@@ -47,14 +47,26 @@ const Cabecalho: React.FC = () => {
           <Link href="/agendamento">
             <span className="hover:text-gray-300 cursor-pointer">Reservar</span>
           </Link>
+          {/* Exibe "Meus Agendamentos" somente se o usuário não for admin nem barbeiro */}
+          {user && !(isBarber || isAdmin) && (
+            <Link href="/meus-agendamentos">
+              <span className="hover:text-gray-300 cursor-pointer">
+                Meus Agendamentos
+              </span>
+            </Link>
+          )}
           {isBarber && (
             <Link href="/barbeiro">
-              <span className="hover:text-gray-300 cursor-pointer">Sua Agenda</span>
+              <span className="hover:text-gray-300 cursor-pointer">
+                Sua Agenda
+              </span>
             </Link>
           )}
           {isAdmin && (
             <Link href="/admin">
-              <span className="hover:text-gray-300 cursor-pointer">Painel</span>
+              <span className="hover:text-gray-300 cursor-pointer">
+                Painel
+              </span>
             </Link>
           )}
         </nav>
@@ -170,6 +182,18 @@ const Cabecalho: React.FC = () => {
                 </span>
               </Link>
             </li>
+            {user && !(isBarber || isAdmin) && (
+              <li>
+                <Link href="/meus-agendamentos">
+                  <span
+                    className="hover:text-gray-300 cursor-pointer"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Meus Agendamentos
+                  </span>
+                </Link>
+              </li>
+            )}
             {isBarber && (
               <li>
                 <Link href="/barbeiro">
@@ -207,7 +231,7 @@ const Cabecalho: React.FC = () => {
                     handleLogout();
                     setMobileMenuOpen(false);
                   }}
-                  className="bg-red-500 px-3 py-1 rounded hover:bg-red-600"
+                  className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
                 >
                   Sair
                 </button>
