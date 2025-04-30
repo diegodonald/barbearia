@@ -162,14 +162,12 @@ const Agendamento: React.FC = () => {
   // Lista dinâmica de barbeiros
   const [barberList, setBarberList] = useState<Barber[]>([]);
 
-  // Redireciona para login se não estiver autenticado
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
     }
   }, [user, loading, router]);
 
-  // Busca dados do usuário (nome)
   useEffect(() => {
     const fetchUserData = async () => {
       if (user && !loading) {
@@ -188,7 +186,6 @@ const Agendamento: React.FC = () => {
     fetchUserData();
   }, [user, loading]);
 
-  // Busca a lista de barbeiros (role "barber")
   useEffect(() => {
     async function fetchBarbers() {
       try {
@@ -210,7 +207,6 @@ const Agendamento: React.FC = () => {
     fetchBarbers();
   }, []);
 
-  // Busca as opções de serviços da coleção "servicos"
   useEffect(() => {
     async function fetchServiceOptions() {
       try {
@@ -233,13 +229,11 @@ const Agendamento: React.FC = () => {
     fetchServiceOptions();
   }, []);
 
-  // Atualiza em tempo real os horários ocupados (agendamentos já salvos)
   useEffect(() => {
     if (selectedDate) {
       const normalizedDateStr = getLocalDateString(selectedDate);
       console.log("Data selecionada (local):", normalizedDateStr);
 
-      // Verifica disponibilidade do dia
       if (operatingHours) {
         if (!isDayAvailable(selectedDate, operatingHours, exceptions)) {
           setFeedback("O agendamento não está disponível para a data selecionada.");
@@ -310,7 +304,6 @@ const Agendamento: React.FC = () => {
     }
   }, [selectedDate, selectedBarber, barberList, operatingHours, exceptions]);
 
-  // Navegação entre as etapas
   const handleNext = () => {
     if (step === 1 && !selectedService) {
       setFeedback("Por favor, selecione um serviço.");
@@ -329,7 +322,6 @@ const Agendamento: React.FC = () => {
     setStep(step - 1);
   };
 
-  // Função para salvar o agendamento, armazenando os slots ocupados
   const saveAppointment = async (assignedBarber: Barber, slots: string[]) => {
     if (!selectedDate) return;
     const normalizedDateStr = getLocalDateString(selectedDate);
@@ -354,7 +346,6 @@ const Agendamento: React.FC = () => {
     }
   };
 
-  // Handler para confirmar o agendamento (verifica novamente a disponibilidade do dia)
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDate) {
@@ -374,8 +365,6 @@ const Agendamento: React.FC = () => {
       return;
     }
 
-    // Para gerar os slots, usamos os horários da exceção se existir override,
-    // caso contrário, os horários globais.
     let openTime: string | undefined;
     let closeTime: string | undefined;
     const normalized = getLocalDateString(selectedDate);
@@ -399,10 +388,7 @@ const Agendamento: React.FC = () => {
       return;
     }
 
-    // Gera os slots dinamicamente com base nos horários definidos (override ou globais)
     const dynamicSlots = generateSlots(openTime, closeTime, 30);
-
-    // Calcula quantos slots são necessários para o serviço
     const slotsNeeded = Math.ceil(selectedService.duration / 30);
     const index = dynamicSlots.indexOf(selectedTimeSlot);
     if (index === -1 || index + slotsNeeded > dynamicSlots.length) {
@@ -410,17 +396,15 @@ const Agendamento: React.FC = () => {
       return;
     }
     const requiredSlots = dynamicSlots.slice(index, index + slotsNeeded);
-    const conflict = requiredSlots.some((slot) =>
-      bookedSlots.includes(slot)
-    );
+    const conflict = requiredSlots.some((slot) => bookedSlots.includes(slot));
     if (conflict) {
-      setFeedback("Algum dos horários necessários está indisponível.");
+      setFeedback("Horário não disponível. Selecione outro horário.");
       return;
     }
 
     if (selectedBarber !== "Qualquer") {
       if (bookedSlots.some((slot) => requiredSlots.includes(slot))) {
-        setFeedback("Esse horário não está disponível. Por favor, escolha outro.");
+        setFeedback("Horário não disponível. Selecione outro horário.");
         return;
       }
       await saveAppointment(selectedBarber as Barber, requiredSlots);
@@ -455,7 +439,7 @@ const Agendamento: React.FC = () => {
         }
       }
       if (!availableBarber) {
-        setFeedback("Esse horário não está disponível. Por favor, escolha outro.");
+        setFeedback("Horário não disponível. Selecione outro horário.");
         return;
       }
       await saveAppointment(availableBarber, requiredSlots);
@@ -467,7 +451,6 @@ const Agendamento: React.FC = () => {
     }, 2000);
   };
 
-  // Variáveis para geração dinâmica dos slots para exibição na UI
   let dynamicSlots: string[] = [];
   let slotsToDisplay: { manha: string[]; tarde: string[]; noite: string[] } = {
     manha: [],
@@ -476,7 +459,6 @@ const Agendamento: React.FC = () => {
   };
   if (selectedDate && operatingHours) {
     const normalized = getLocalDateString(selectedDate);
-    // Se houver exceção com override, gera os slots com os horários definidos na exceção
     const exception = exceptions.find(
       (ex) => ex.date === normalized && ex.status === "available" && ex.open && ex.close
     );
@@ -507,7 +489,6 @@ const Agendamento: React.FC = () => {
     <div className="min-h-screen bg-black text-white">
       <Header />
 
-      {/* Popup de Confirmação */}
       {showPopup && (
         <div className="fixed top-1/3 left-1/2 transform -translate-x-1/2 z-50">
           <div className="bg-white text-black p-6 rounded shadow">
@@ -623,6 +604,7 @@ const Agendamento: React.FC = () => {
                   onChange={(date: Date | null) => {
                     setSelectedDate(date);
                     setSelectedTimeSlot("");
+                    setFeedback(""); // Limpa feedback ao mudar a data
                   }}
                   minDate={new Date()}
                   dateFormat="dd/MM/yyyy"
@@ -651,7 +633,10 @@ const Agendamento: React.FC = () => {
                               <button
                                 key={slot}
                                 type="button"
-                                onClick={() => setSelectedTimeSlot(slot)}
+                                onClick={() => {
+                                  setSelectedTimeSlot(slot);
+                                  setFeedback(""); // Limpa mensagem ao selecionar outro slot
+                                }}
                                 className={`px-3 py-1 border rounded ${
                                   selectedTimeSlot === slot
                                     ? "bg-blue-500 text-white"
@@ -683,9 +668,11 @@ const Agendamento: React.FC = () => {
                   Confirmar Agendamento
                 </button>
               </div>
+              {feedback && (
+                <p className="mt-4 text-center text-red-500">{feedback}</p>
+              )}
             </form>
           )}
-          {/* Removido o bloco extra de feedback para não persistir mensagem em datas disponíveis */}
         </div>
       </main>
       <Footer />
