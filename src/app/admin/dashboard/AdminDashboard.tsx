@@ -16,11 +16,12 @@ import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { ExtendedUser } from "@/hooks/useAuth";
 
-// Atualizamos a interface para incluir o campo barberId
+// Atualizamos a interface para incluir o campo timeSlots (opcional)
 interface Appointment {
   id: string;
   dateStr: string;
-  timeSlot: string;
+  timeSlot?: string;
+  timeSlots?: string[];
   service: string;
   barber: string;
   barberId: string;
@@ -28,14 +29,12 @@ interface Appointment {
   status: string; // "confirmado", "pendente", "cancelado", etc.
 }
 
-// Função para converter data de "YYYY-MM-DD" para "DD/MM/YYYY"
 const formatDate = (dateStr: string): string => {
   const parts = dateStr.split("-");
   if (parts.length !== 3) return dateStr;
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 };
 
-// Tipo para representar os barbeiros (para o dropdown)
 interface BarberOption {
   id: string;
   name: string;
@@ -60,11 +59,10 @@ const AdminDashboard: React.FC = () => {
   const [serviceOptions, setServiceOptions] = useState<string[]>([]);
   const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
 
-  // Verifica se o usuário logado possui role "admin"
   useEffect(() => {
     if (!loading && user) {
       if ((user as ExtendedUser).role !== "admin") {
-        router.push("/"); // Redireciona caso não seja admin
+        router.push("/");
       }
     }
   }, [loading, user, router]);
@@ -73,16 +71,22 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     const q = query(collection(db, "agendamentos"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const appsData: Appointment[] = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        dateStr: docSnap.data().dateStr,
-        timeSlot: docSnap.data().timeSlot,
-        service: docSnap.data().service,
-        barber: docSnap.data().barber,
-        barberId: docSnap.data().barberId || "", // garante o campo, se houver
-        name: docSnap.data().name,
-        status: docSnap.data().status ? docSnap.data().status : "confirmado",
-      }));
+      const appsData: Appointment[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        // Tenta ler timeSlot; se não existir, utiliza timeSlots (juntados por " - ")
+        const time =
+          data.timeSlot || (data.timeSlots ? data.timeSlots.join(" - ") : "");
+        return {
+          id: docSnap.id,
+          dateStr: data.dateStr,
+          timeSlot: time,
+          service: data.service,
+          barber: data.barber,
+          barberId: data.barberId || "",
+          name: data.name,
+          status: data.status ? data.status : "confirmado",
+        };
+      });
       setAppointments(appsData);
       setLoadingAppointments(false);
     });
@@ -122,7 +126,6 @@ const AdminDashboard: React.FC = () => {
     fetchBarberOptions();
   }, []);
 
-  // Funções para os botões "Hoje", "Amanhã" e limpar filtros
   const setTodayFilter = () => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -145,27 +148,22 @@ const AdminDashboard: React.FC = () => {
     setFilterBarber("");
   };
 
-  // Lista única de barbeiros para o filtro (baseada no campo "barber")
   const uniqueBarbers = Array.from(new Set(appointments.map((app) => app.barber))).sort();
 
-  // Aplica filtros aos agendamentos
   const filteredAppointments = appointments.filter((appt) => {
     const matchDate = filterDate ? appt.dateStr === filterDate : true;
     const matchBarber = filterBarber ? appt.barber === filterBarber : true;
     return matchDate && matchBarber;
   });
 
-  // Função para iniciar edição de um agendamento
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
   };
 
-  // Função para cancelar a edição
   const handleCancelEdit = () => {
     setEditingAppointment(null);
   };
 
-  // Ao salvar a edição, atualiza no Firestore incluindo os campos service, barber e barberId
   const handleSaveEdit = async () => {
     if (!editingAppointment) return;
     try {
@@ -174,7 +172,7 @@ const AdminDashboard: React.FC = () => {
         timeSlot: editingAppointment.timeSlot,
         service: editingAppointment.service,
         barber: editingAppointment.barber,
-        barberId: editingAppointment.barberId, // Fundamental para o módulo agendamento
+        barberId: editingAppointment.barberId,
         status: editingAppointment.status,
       });
       setEditingAppointment(null);
@@ -183,9 +181,8 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Função de exclusão de agendamento
+  // Removemos a confirmação duplicada; a confirmação ocorre no onClick
   const handleCancelAppointment = async (appt: Appointment) => {
-    if (!confirm("Deseja realmente cancelar este agendamento?")) return;
     try {
       await deleteDoc(doc(db, "agendamentos", appt.id));
     } catch (error) {
@@ -199,7 +196,7 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Dashboard Administrativo</h1>
+      <h1 className="text-3xl font-bold text-center mb-6">Agenda dos Barbeiros</h1>
 
       {/* Seção de Filtros */}
       <div className="mb-4 flex flex-wrap gap-4 items-end">
@@ -285,7 +282,7 @@ const AdminDashboard: React.FC = () => {
                     <td className="px-4 py-2 border">
                       <input
                         type="time"
-                        value={editingAppointment.timeSlot}
+                        value={editingAppointment.timeSlot || ""}
                         onChange={(e) =>
                           setEditingAppointment({
                             ...editingAppointment,
@@ -364,7 +361,7 @@ const AdminDashboard: React.FC = () => {
                           Salvar
                         </button>
                         <button
-                          onClick={handleCancelEdit}
+                          onClick={() => setEditingAppointment(null)}
                           className="bg-gray-500 px-3 py-1 rounded hover:bg-gray-600 transition"
                         >
                           Cancelar
@@ -375,7 +372,10 @@ const AdminDashboard: React.FC = () => {
                 ) : (
                   <tr key={app.id}>
                     <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
-                    <td className="px-4 py-2 border">{app.timeSlot}</td>
+                    <td className="px-4 py-2 border">
+                      {app.timeSlot ||
+                        (app.timeSlots ? app.timeSlots.join(" - ") : "")}
+                    </td>
                     <td className="px-4 py-2 border">{app.service}</td>
                     <td className="px-4 py-2 border">{app.barber}</td>
                     <td className="px-4 py-2 border">{app.name}</td>
@@ -389,7 +389,11 @@ const AdminDashboard: React.FC = () => {
                           Editar
                         </button>
                         <button
-                          onClick={() => handleCancelAppointment(app)}
+                          onClick={() => {
+                            if (confirm("Deseja realmente cancelar este agendamento?")) {
+                              handleCancelAppointment(app);
+                            }
+                          }}
                           className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
                         >
                           Cancelar Agendamento
