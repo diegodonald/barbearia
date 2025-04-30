@@ -30,6 +30,12 @@ export default function Footer() {
           <Link href="/reservar">
             <span className="hover:text-gray-400 cursor-pointer">Reservar</span>
           </Link>
+          {/* Exibe "Painel" para usuários admin */}
+          {isAdmin && (
+            <Link href="/admin">
+              <span className="hover:text-gray-400 cursor-pointer">Painel</span>
+            </Link>
+          )}
           {/* Exibe "Meus Agendamentos" para usuários que não são admin nem barbeiro */}
           {user && !(isBarber || isAdmin) && (
             <Link href="/meus-agendamentos">
