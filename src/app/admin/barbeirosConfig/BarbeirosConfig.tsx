@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { doc, getDoc, updateDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import DatePicker from "react-datepicker";
@@ -41,25 +42,31 @@ interface BarberOption {
 }
 
 const BarbeirosConfig: React.FC = () => {
-  // Lista de barbeiros disponíveis
+  const router = useRouter();
+
+  // Estado para lista de barbeiros
   const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string>("");
-  // Configuração individual do barbeiro selecionado
   const [barberConfig, setBarberConfig] = useState<BarberConfig | null>(null);
-  // Estado de carregamento e feedback
   const [loading, setLoading] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<string>("");
 
-  // Carregar a lista de barbeiros com role "barber"
+  // Estado para nova exceção
+  const [newException, setNewException] = useState<Exception>({
+    date: "",
+    status: "blocked",
+    message: "",
+    open: "",
+    close: "",
+  });
+
+  // Carrega a lista de barbeiros com role "barber"
   useEffect(() => {
     async function fetchBarbers() {
       try {
         const q = await getDocs(collection(db, "usuarios"));
         const barbers = q.docs
-          .map((doc) => ({
-            id: doc.id,
-            ...(doc.data() as any),
-          }))
+          .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
           .filter((user) => user.role === "barber")
           .map((user) => ({ id: user.id, name: user.name }));
         setBarberOptions(barbers);
@@ -70,7 +77,7 @@ const BarbeirosConfig: React.FC = () => {
     fetchBarbers();
   }, []);
 
-  // Carregar a configuração individual do barbeiro selecionado
+  // Carrega a configuração individual do barbeiro selecionado
   useEffect(() => {
     if (!selectedBarberId) return;
     setLoading(true);
@@ -85,7 +92,7 @@ const BarbeirosConfig: React.FC = () => {
               exceptions: data.exceptions || [],
             });
           } else {
-            // Configuração padrão se inexistente
+            // Se não existir configuração, cria a configuração padrão
             const defaultConfig: BarberConfig = {
               horarios: {
                 segunda: { open: "08:00", close: "18:00", active: true },
@@ -110,20 +117,49 @@ const BarbeirosConfig: React.FC = () => {
       });
   }, [selectedBarberId]);
 
-  // Função para salvar a configuração individual
+  // Função para salvar a configuração individual do barbeiro
   const saveConfig = async () => {
     if (!selectedBarberId || !barberConfig) return;
     try {
       const docRef = doc(db, "usuarios", selectedBarberId);
-      await updateDoc(docRef, { horarios: barberConfig.horarios, exceptions: barberConfig.exceptions || [] });
+      await updateDoc(docRef, { 
+        horarios: barberConfig.horarios, 
+        exceptions: barberConfig.exceptions || [] 
+      });
       setFeedback("Configurações salvas com sucesso!");
     } catch (error) {
       console.error(error);
-      setFeedback("Erro ao salvar configurações.");
+      setFeedback("Erro ao salvar configurações. Tente novamente.");
     }
   };
 
-  // Renderizar o formulário para cada dia da semana
+  // Função para adicionar uma nova exceção na configuração
+  const handleAddException = () => {
+    if (!newException.date) {
+      setFeedback("Informe uma data para a exceção.");
+      return;
+    }
+    if (newException.status === "available" && (!newException.open || !newException.close)) {
+      setFeedback("Para liberar um dia inativo, informe os horários de abertura e fechamento.");
+      return;
+    }
+    if (barberConfig) {
+      const updatedExceptions = barberConfig.exceptions ? [...barberConfig.exceptions, newException] : [newException];
+      setBarberConfig({ ...barberConfig, exceptions: updatedExceptions });
+      setNewException({ date: "", status: "blocked", message: "", open: "", close: "" });
+      setFeedback("");
+    }
+  };
+
+  // Função para remover uma exceção da configuração pelo índice
+  const handleRemoveException = (index: number) => {
+    if (barberConfig && barberConfig.exceptions) {
+      const updatedList = barberConfig.exceptions.filter((_, i) => i !== index);
+      setBarberConfig({ ...barberConfig, exceptions: updatedList });
+    }
+  };
+
+  // Função para renderizar o formulário de cada dia
   const renderDayForm = (day: keyof BarberConfig["horarios"]) => {
     if (!barberConfig) return null;
     const config = barberConfig.horarios[day];
@@ -189,7 +225,7 @@ const BarbeirosConfig: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="space-y-8">
       <h1 className="text-3xl font-bold mb-6">Configuração Individual do Barbeiro</h1>
       
       {/* Seletor de Barbeiro */}
@@ -226,7 +262,103 @@ const BarbeirosConfig: React.FC = () => {
           {/* Seção de Exceções */}
           <section className="mt-8">
             <h2 className="text-2xl font-semibold mb-4">Exceções</h2>
-            <p>Funcionalidade de exceções em desenvolvimento...</p>
+            {/* Formulário para Adicionar Exceção */}
+            <div className="mb-4 p-4 border rounded bg-gray-800">
+              <div className="flex flex-wrap gap-4 items-center mb-2">
+                <label className="block">Data:</label>
+                <input
+                  type="date"
+                  value={newException.date}
+                  onChange={(e) =>
+                    setNewException({ ...newException, date: e.target.value })
+                  }
+                  className="px-2 py-1 text-black rounded"
+                />
+              </div>
+              <div className="flex flex-wrap gap-4 items-center mb-2">
+                <label className="block">Status:</label>
+                <select
+                  value={newException.status}
+                  onChange={(e) =>
+                    setNewException({ 
+                      ...newException, 
+                      status: e.target.value as "blocked" | "available" 
+                    })
+                  }
+                  className="px-2 py-1 text-black rounded"
+                >
+                  <option value="blocked">Bloqueado</option>
+                  <option value="available">Liberado</option>
+                </select>
+              </div>
+              {newException.status === "available" && (
+                <div className="flex flex-wrap gap-4 items-center mb-2">
+                  <div>
+                    <label className="block">Abertura:</label>
+                    <input
+                      type="time"
+                      value={newException.open || ""}
+                      onChange={(e) =>
+                        setNewException({ ...newException, open: e.target.value })
+                      }
+                      className="px-2 py-1 text-black rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block">Fechamento:</label>
+                    <input
+                      type="time"
+                      value={newException.close || ""}
+                      onChange={(e) =>
+                        setNewException({ ...newException, close: e.target.value })
+                      }
+                      className="px-2 py-1 text-black rounded"
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-4 items-center mb-2">
+                <label className="block">Mensagem (opcional):</label>
+                <input
+                  type="text"
+                  value={newException.message}
+                  onChange={(e) =>
+                    setNewException({ ...newException, message: e.target.value })
+                  }
+                  className="w-full px-2 py-1 text-black rounded"
+                />
+              </div>
+              <button
+                onClick={handleAddException}
+                className="bg-green-500 px-4 py-2 rounded hover:bg-green-600 transition"
+              >
+                Adicionar Exceção
+              </button>
+            </div>
+            {/* Listagem das exceções existentes */}
+            {barberConfig.exceptions && barberConfig.exceptions.length > 0 ? (
+              <ul className="space-y-2">
+                {barberConfig.exceptions.map((ex, index) => (
+                  <li key={index} className="flex justify-between items-center bg-gray-700 p-2 rounded">
+                    <span>
+                      {ex.date} – {ex.status}{" "}
+                      {ex.status === "available" && ex.open && ex.close
+                        ? `(Abertura: ${ex.open}, Fechamento: ${ex.close})`
+                        : ""}
+                      {ex.message ? ` - ${ex.message}` : ""}
+                    </span>
+                    <button
+                      onClick={() => handleRemoveException(index)}
+                      className="bg-red-500 px-2 py-1 rounded hover:bg-red-600 transition"
+                    >
+                      Excluir
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>Nenhuma exceção cadastrada.</p>
+            )}
           </section>
 
           <button
@@ -235,12 +367,21 @@ const BarbeirosConfig: React.FC = () => {
           >
             Salvar Configuração
           </button>
-
           {feedback && <p className="mt-4 text-center text-green-500">{feedback}</p>}
         </>
       ) : (
         <p>Nenhuma configuração encontrada para este barbeiro.</p>
       )}
+
+      {/* Botão Voltar para /admin */}
+      <div className="mt-8">
+        <button
+          onClick={() => router.push("/admin")}
+          className="bg-gray-500 px-4 py-2 rounded hover:bg-gray-600 transition"
+        >
+          Voltar
+        </button>
+      </div>
     </div>
   );
 };
