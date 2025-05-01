@@ -20,7 +20,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
 
-// Função auxiliar que retorna a data no formato "YYYY-MM-DD" usando o horário local
+// Retorna a data no formato "YYYY-MM-DD"
 function getLocalDateString(date: Date): string {
   const year = date.getFullYear();
   const month = ("0" + (date.getMonth() + 1)).slice(-2);
@@ -28,26 +28,38 @@ function getLocalDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// Interfaces para tipagem do controle de horários
 interface DayConfig {
   open?: string;
   close?: string;
   active: boolean;
 }
 
-interface OperatingHours {
+export interface OperatingHours {
   diasSemana: {
-    domingo: DayConfig;
     segunda: DayConfig;
     terça: DayConfig;
     quarta: DayConfig;
     quinta: DayConfig;
     sexta: DayConfig;
     sábado: DayConfig;
+    domingo: DayConfig;
   };
 }
 
-// Função auxiliar para obter o nome do dia da semana, em português
+// Fallback padrão para operatingHours (configuração global padrão)
+const defaultOperatingHours: OperatingHours = {
+  diasSemana: {
+    segunda: { open: "08:00", close: "18:00", active: true },
+    terça: { open: "08:00", close: "18:00", active: true },
+    quarta: { open: "08:00", close: "18:00", active: true },
+    quinta: { open: "08:00", close: "18:00", active: true },
+    sexta: { open: "08:00", close: "18:00", active: true },
+    sábado: { open: "09:00", close: "14:00", active: true },
+    domingo: { active: false },
+  },
+};
+
+// Retorna o nome do dia da semana (em português)
 function getDayName(date: Date): keyof OperatingHours["diasSemana"] {
   const days = [
     "domingo",
@@ -61,7 +73,7 @@ function getDayName(date: Date): keyof OperatingHours["diasSemana"] {
   return days[date.getDay()] as keyof OperatingHours["diasSemana"];
 }
 
-// Função que gera dinamicamente os slots de horário
+// Gera os slots de horário conforme um intervalo (em minutos)
 function generateSlots(start: string, end: string, interval: number): string[] {
   const [startHour, startMinute] = start.split(":").map(Number);
   const [endHour, endMinute] = end.split(":").map(Number);
@@ -71,40 +83,32 @@ function generateSlots(start: string, end: string, interval: number): string[] {
   for (let time = startTotal; time <= endTotal; time += interval) {
     const hour = Math.floor(time / 60);
     const minute = time % 60;
-    const slot = `${hour.toString().padStart(2, "0")}:${minute
-      .toString()
-      .padStart(2, "0")}`;
-    slots.push(slot);
+    slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
   }
   return slots;
 }
 
-// Função para agrupar os slots em períodos do dia: "manhã", "tarde" e "noite"
-// Internamente usamos as chaves "manha", "tarde" e "noite"
-function groupSlots(
-  slots: string[]
-): { manha: string[]; tarde: string[]; noite: string[] } {
+// Agrupa os slots em períodos: manhã, tarde e noite
+function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite: string[] } {
   const manha = slots.filter((slot) => slot < "12:00");
   const tarde = slots.filter((slot) => slot >= "12:00" && slot < "17:00");
   const noite = slots.filter((slot) => slot >= "17:00");
   return { manha, tarde, noite };
 }
 
-// Tipo que representa um serviço (conforme a coleção "servicos")
 interface Service {
   name: string;
-  duration: number; // duração em minutos
+  duration: number;
   value: number;
 }
 
-// Tipo para representar os barbeiros
 interface Barber {
   id: string;
   name: string;
 }
 
-// Função auxiliar que verifica se o dia selecionado está disponível para agendamento.
-// Prioriza exceções: se houver exceção com status "blocked", retorna false; se "available", retorna true.
+// Verifica se o dia está disponível para agendamento, utilizando exceções se houver.
+// Se operatingHours ou operatingHours.diasSemana não estiverem definidos, utiliza fallback.
 function isDayAvailable(
   selectedDate: Date,
   operatingHours: OperatingHours,
@@ -112,9 +116,20 @@ function isDayAvailable(
 ): boolean {
   const normalized = getLocalDateString(selectedDate);
   const dayName = getDayName(selectedDate);
-  const dayConfig: DayConfig = operatingHours.diasSemana[dayName];
-  const exception = exceptions.find((ex) => ex.date === normalized);
 
+  if (!operatingHours || !operatingHours.diasSemana) {
+    console.error("operatingHours ou operatingHours.diasSemana não estão definidos.", operatingHours);
+    return false;
+  }
+
+  const dayConfig: DayConfig =
+    operatingHours.diasSemana[dayName] ||
+    (() => {
+      console.error(`Configuração para o dia '${dayName}' não encontrada. Utilizando fallback.`);
+      return { open: "08:00", close: "18:00", active: false };
+    })();
+
+  const exception = exceptions.find((ex) => ex.date === normalized);
   if (exception) {
     if (exception.status === "blocked") {
       console.log(`Dia ${normalized} bloqueado por exceção.`);
@@ -133,34 +148,22 @@ const Agendamento: React.FC = () => {
   const router = useRouter();
   const { operatingHours, exceptions } = useOperatingHours();
 
-  // Controle do fluxo de etapas
+  // Estados do fluxo de agendamento
   const [step, setStep] = useState<number>(1);
-
-  // Etapa 1: Seleção do Serviço
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [serviceOptions, setServiceOptions] = useState<Service[]>([]);
-
-  // Etapa 2: Seleção do Barbeiro – objeto do tipo Barber ou "Qualquer"
   const [selectedBarber, setSelectedBarber] = useState<Barber | "Qualquer" | "">("");
-
-  // Etapa 3: Seleção de Data e Hora
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
-
-  // Estado para armazenar os horários já ocupados (para a UI)
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
-
-  // Mensagem de feedback
   const [feedback, setFeedback] = useState<string>("");
-
-  // Controle do popup de confirmação
   const [showPopup, setShowPopup] = useState<boolean>(false);
-
-  // Dados extras do usuário (ex.: nome)
   const [userName, setUserName] = useState<string>("");
-
-  // Lista dinâmica de barbeiros
   const [barberList, setBarberList] = useState<Barber[]>([]);
+
+  // Estados para a configuração individual do barbeiro (se aplicável)
+  const [indivOperatingHours, setIndivOperatingHours] = useState<OperatingHours | null>(null);
+  const [indivExceptions, setIndivExceptions] = useState<any[]>([]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -189,10 +192,7 @@ const Agendamento: React.FC = () => {
   useEffect(() => {
     async function fetchBarbers() {
       try {
-        const q = query(
-          collection(db, "usuarios"),
-          where("role", "==", "barber")
-        );
+        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
         const querySnapshot = await getDocs(q);
         const list = querySnapshot.docs.map((doc) => ({
           id: doc.id,
@@ -214,11 +214,7 @@ const Agendamento: React.FC = () => {
         const snapshot = await getDocs(q);
         const services = snapshot.docs.map((doc) => {
           const data = doc.data();
-          return {
-            name: data.name,
-            duration: Number(data.duration),
-            value: Number(data.value),
-          } as Service;
+          return { name: data.name, duration: Number(data.duration), value: Number(data.value) } as Service;
         });
         setServiceOptions(services);
         console.log("Serviços encontrados:", services);
@@ -229,19 +225,65 @@ const Agendamento: React.FC = () => {
     fetchServiceOptions();
   }, []);
 
+  // Carrega a configuração individual do barbeiro, se um for selecionado
+  useEffect(() => {
+    if (selectedBarber !== "Qualquer" && selectedBarber !== "") {
+      const barberId = (selectedBarber as Barber).id;
+      const barberDocRef = doc(db, "usuarios", barberId);
+      getDoc(barberDocRef)
+        .then((docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.horarios) {
+              setIndivOperatingHours(data.horarios);
+              setIndivExceptions(data.exceptions || []);
+            } else {
+              setIndivOperatingHours(null);
+              setIndivExceptions([]);
+            }
+          }
+        })
+        .catch((error) => {
+          console.error("Erro ao carregar configuração individual do barbeiro:", error);
+          setIndivOperatingHours(null);
+          setIndivExceptions([]);
+        });
+    } else {
+      setIndivOperatingHours(null);
+      setIndivExceptions([]);
+    }
+  }, [selectedBarber]);
+
+  // Define a configuração corrente: usa a individual se disponível; caso contrário, a global
+  const currentOperatingHours =
+    selectedBarber !== "Qualquer" && indivOperatingHours ? indivOperatingHours : operatingHours;
+  const currentExceptions =
+    selectedBarber !== "Qualquer" && indivExceptions.length > 0 ? indivExceptions : exceptions;
+
+  // Aqui, garantimos que se currentOperatingHours estiver vazio ou não tiver "diasSemana", usamos o fallback
+  const effectiveOperatingHours: OperatingHours =
+    (currentOperatingHours && currentOperatingHours.diasSemana) ? currentOperatingHours : defaultOperatingHours;
+  const effectiveExceptions: any[] = currentExceptions || [];
+
+  // Atualiza os slots ocupados, em tempo real, baseado nos agendamentos
   useEffect(() => {
     if (selectedDate) {
       const normalizedDateStr = getLocalDateString(selectedDate);
       console.log("Data selecionada (local):", normalizedDateStr);
 
-      if (operatingHours) {
-        if (!isDayAvailable(selectedDate, operatingHours, exceptions)) {
-          setFeedback("O agendamento não está disponível para a data selecionada.");
-          setBookedSlots([]);
-          return;
-        } else {
-          setFeedback("");
-        }
+      if (!effectiveOperatingHours || !effectiveOperatingHours.diasSemana) {
+        console.error("OperatingHours efetivo não definido:", effectiveOperatingHours);
+        setFeedback("Configurações de horários não estão disponíveis.");
+        setBookedSlots([]);
+        return;
+      }
+
+      if (!isDayAvailable(selectedDate, effectiveOperatingHours, effectiveExceptions)) {
+        setFeedback("O agendamento não está disponível para a data selecionada.");
+        setBookedSlots([]);
+        return;
+      } else {
+        setFeedback("");
       }
 
       let q;
@@ -302,7 +344,7 @@ const Agendamento: React.FC = () => {
     } else {
       setBookedSlots([]);
     }
-  }, [selectedDate, selectedBarber, barberList, operatingHours, exceptions]);
+  }, [selectedDate, selectedBarber, barberList, effectiveOperatingHours, effectiveExceptions]);
 
   const handleNext = () => {
     if (step === 1 && !selectedService) {
@@ -360,7 +402,7 @@ const Agendamento: React.FC = () => {
       setFeedback("Serviço não selecionado.");
       return;
     }
-    if (operatingHours && !isDayAvailable(selectedDate, operatingHours, exceptions)) {
+    if (!isDayAvailable(selectedDate, effectiveOperatingHours, effectiveExceptions)) {
       setFeedback("O agendamento não está disponível para a data selecionada.");
       return;
     }
@@ -368,8 +410,12 @@ const Agendamento: React.FC = () => {
     let openTime: string | undefined;
     let closeTime: string | undefined;
     const normalized = getLocalDateString(selectedDate);
-    const exception = exceptions.find(
-      (ex) => ex.date === normalized && ex.status === "available" && ex.open && ex.close
+    const exception = effectiveExceptions.find(
+      (ex) =>
+        ex.date === normalized &&
+        ex.status === "available" &&
+        ex.open &&
+        ex.close
     );
     if (exception) {
       openTime = exception.open;
@@ -377,7 +423,11 @@ const Agendamento: React.FC = () => {
       console.log(`Usando horários de exceção: ${openTime} às ${closeTime}`);
     } else {
       const dayName = getDayName(selectedDate);
-      const dayConfig: DayConfig = operatingHours.diasSemana[dayName];
+      const dayConfig: DayConfig | undefined = effectiveOperatingHours.diasSemana?.[dayName];
+      if (!dayConfig) {
+        setFeedback("Horários não configurados para o dia selecionado.");
+        return;
+      }
       if (dayConfig.active && dayConfig.open && dayConfig.close) {
         openTime = dayConfig.open;
         closeTime = dayConfig.close;
@@ -457,10 +507,14 @@ const Agendamento: React.FC = () => {
     tarde: [],
     noite: [],
   };
-  if (selectedDate && operatingHours) {
+  if (selectedDate && effectiveOperatingHours) {
     const normalized = getLocalDateString(selectedDate);
-    const exception = exceptions.find(
-      (ex) => ex.date === normalized && ex.status === "available" && ex.open && ex.close
+    const exception = effectiveExceptions.find(
+      (ex) =>
+        ex.date === normalized &&
+        ex.status === "available" &&
+        ex.open &&
+        ex.close
     );
     let openTime: string | undefined;
     let closeTime: string | undefined;
@@ -469,8 +523,8 @@ const Agendamento: React.FC = () => {
       closeTime = exception.close;
     } else {
       const dayName = getDayName(selectedDate);
-      const dayConfig: DayConfig = operatingHours.diasSemana[dayName];
-      if (dayConfig.active && dayConfig.open && dayConfig.close) {
+      const dayConfig: DayConfig | undefined = effectiveOperatingHours.diasSemana?.[dayName];
+      if (dayConfig && dayConfig.active && dayConfig.open && dayConfig.close) {
         openTime = dayConfig.open;
         closeTime = dayConfig.close;
       }
@@ -506,7 +560,6 @@ const Agendamento: React.FC = () => {
             Agendamento para: <strong>{userName || user.email}</strong>
           </p>
         </div>
-
         <div className="max-w-3xl mx-auto bg-gray-900 p-6 rounded shadow">
           {step === 1 && (
             <>
@@ -516,9 +569,7 @@ const Agendamento: React.FC = () => {
                   value={selectedService ? selectedService.name : ""}
                   onChange={(e) => {
                     const serviceName = e.target.value;
-                    const serv = serviceOptions.find(
-                      (s) => s.name === serviceName
-                    );
+                    const serv = serviceOptions.find((s) => s.name === serviceName);
                     setSelectedService(serv || null);
                   }}
                   className="w-full px-3 py-2 border rounded bg-white text-black"
@@ -532,16 +583,12 @@ const Agendamento: React.FC = () => {
                 </select>
               </div>
               <div className="flex justify-end mt-6">
-                <button
-                  onClick={handleNext}
-                  className="bg-blue-500 text-white px-4 py-2 rounded"
-                >
+                <button onClick={handleNext} className="bg-blue-500 text-white px-4 py-2 rounded">
                   Próximo
                 </button>
               </div>
             </>
           )}
-
           {step === 2 && (
             <>
               <h2 className="text-xl mb-4">Selecione o Barbeiro</h2>
@@ -553,8 +600,7 @@ const Agendamento: React.FC = () => {
                       type="button"
                       onClick={() => setSelectedBarber(barber)}
                       className={`w-full p-2 border rounded ${
-                        typeof selectedBarber === "object" &&
-                        selectedBarber.id === barber.id
+                        typeof selectedBarber === "object" && selectedBarber.id === barber.id
                           ? "bg-blue-500 text-white"
                           : "bg-white text-black"
                       }`}
@@ -569,31 +615,22 @@ const Agendamento: React.FC = () => {
                   type="button"
                   onClick={() => setSelectedBarber("Qualquer")}
                   className={`w-full p-2 border rounded ${
-                    selectedBarber === "Qualquer"
-                      ? "bg-blue-500 text-white"
-                      : "bg-white text-black"
+                    selectedBarber === "Qualquer" ? "bg-blue-500 text-white" : "bg-white text-black"
                   }`}
                 >
                   Qualquer Barbeiro
                 </button>
               </div>
               <div className="flex justify-between mt-6">
-                <button
-                  onClick={handleBack}
-                  className="bg-gray-500 text-white px-4 py-2 rounded"
-                >
+                <button onClick={handleBack} className="bg-gray-500 text-white px-4 py-2 rounded">
                   Voltar
                 </button>
-                <button
-                  onClick={handleNext}
-                  className="bg-blue-500 text-white px-4 py-2 rounded"
-                >
+                <button onClick={handleNext} className="bg-blue-500 text-white px-4 py-2 rounded">
                   Próximo
                 </button>
               </div>
             </>
           )}
-
           {step === 3 && (
             <form onSubmit={handleConfirm} className="space-y-4">
               <h2 className="text-xl mb-4">Selecione Data e Hora</h2>
@@ -604,7 +641,7 @@ const Agendamento: React.FC = () => {
                   onChange={(date: Date | null) => {
                     setSelectedDate(date);
                     setSelectedTimeSlot("");
-                    setFeedback(""); // Limpa feedback ao mudar a data
+                    setFeedback("");
                   }}
                   minDate={new Date()}
                   dateFormat="dd/MM/yyyy"
@@ -613,64 +650,50 @@ const Agendamento: React.FC = () => {
                   required
                 />
               </div>
-              {selectedDate && operatingHours && isDayAvailable(selectedDate, operatingHours, exceptions) ? (
+              {selectedDate && effectiveOperatingHours && isDayAvailable(selectedDate, effectiveOperatingHours, effectiveExceptions) ? (
                 <>
                   <h3 className="text-lg mt-4">Horários Disponíveis</h3>
                   <div className="grid grid-cols-1 gap-2 mt-2">
                     {Object.entries(slotsToDisplay).map(([periodKey, slots]) => (
                       <div key={periodKey}>
                         <h4 className="font-bold capitalize">
-                          {periodKey === "manha"
-                            ? "manhã"
-                            : periodKey === "tarde"
-                            ? "tarde"
-                            : "noite"}
+                          {periodKey === "manha" ? "manhã" : periodKey === "tarde" ? "tarde" : "noite"}
                         </h4>
                         <div className="flex flex-wrap gap-2 mt-1">
-                          {slots
-                            .filter((slot) => !bookedSlots.includes(slot))
-                            .map((slot) => (
-                              <button
-                                key={slot}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedTimeSlot(slot);
-                                  setFeedback(""); // Limpa mensagem ao selecionar outro slot
-                                }}
-                                className={`px-3 py-1 border rounded ${
-                                  selectedTimeSlot === slot
-                                    ? "bg-blue-500 text-white"
-                                    : "bg-white text-black"
-                                }`}
-                              >
-                                {slot}
-                              </button>
-                            ))}
+                          {slots.filter((slot) => !bookedSlots.includes(slot)).map((slot) => (
+                            <button
+                              key={slot}
+                              type="button"
+                              onClick={() => {
+                                setSelectedTimeSlot(slot);
+                                setFeedback("");
+                              }}
+                              className={`px-3 py-1 border rounded ${
+                                selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
+                              }`}
+                            >
+                              {slot}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     ))}
                   </div>
                 </>
-              ) : selectedDate && operatingHours && !isDayAvailable(selectedDate, operatingHours, exceptions) ? (
+              ) : selectedDate && effectiveOperatingHours && !isDayAvailable(selectedDate, effectiveOperatingHours, effectiveExceptions) ? (
                 <div className="text-red-500 text-center mt-4">
                   O agendamento não está disponível para a data selecionada.
                 </div>
               ) : null}
               <div className="flex justify-between mt-6">
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  className="bg-gray-500 text-white px-4 py-2 rounded"
-                >
+                <button type="button" onClick={handleBack} className="bg-gray-500 text-white px-4 py-2 rounded">
                   Voltar
                 </button>
                 <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
                   Confirmar Agendamento
                 </button>
               </div>
-              {feedback && (
-                <p className="mt-4 text-center text-red-500">{feedback}</p>
-              )}
+              {feedback && <p className="mt-4 text-center text-red-500">{feedback}</p>}
             </form>
           )}
         </div>
