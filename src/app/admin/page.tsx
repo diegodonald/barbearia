@@ -1,10 +1,23 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import useAuth from "@/hooks/useAuth";
 
 const AdminMain: React.FC = () => {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  // Redireciona caso o usuário não seja admin
+  useEffect(() => {
+    if (!loading && user?.role !== "admin") {
+      router.push("/"); // Redireciona para a home ou outra rota adequada.
+    }
+  }, [user, loading, router]);
+
   return (
     <div className="min-h-screen bg-black text-white">
       <Header />
@@ -38,6 +51,12 @@ const AdminMain: React.FC = () => {
               className="w-full md:w-1/2 text-center py-3 bg-green-500 text-white rounded hover:bg-green-600 transition"
             >
               Configuração de Horários
+            </Link>
+            <Link
+              href="/admin/barbeirosConfig"
+              className="w-full md:w-1/2 text-center py-3 bg-purple-500 text-white rounded hover:bg-purple-600 transition"
+            >
+              Gestão de Barbeiros
             </Link>
           </div>
         </div>
