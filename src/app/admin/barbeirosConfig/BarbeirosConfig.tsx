@@ -226,6 +226,16 @@ const BarbeirosConfig: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {/* Botão Voltar na parte superior esquerda */}
+      <div className="px-4 pt-6 flex justify-start">
+        <button
+          onClick={() => router.push("/admin")}
+          className="bg-gray-500 px-4 py-2 rounded hover:bg-gray-600 transition text-white"
+        >
+          Voltar
+        </button>
+      </div>
+
       <h1 className="text-3xl font-bold mb-6">Configuração Individual do Barbeiro</h1>
       
       {/* Seletor de Barbeiro */}
@@ -372,16 +382,6 @@ const BarbeirosConfig: React.FC = () => {
       ) : (
         <p>Nenhuma configuração encontrada para este barbeiro.</p>
       )}
-
-      {/* Botão Voltar para /admin */}
-      <div className="mt-8">
-        <button
-          onClick={() => router.push("/admin")}
-          className="bg-gray-500 px-4 py-2 rounded hover:bg-gray-600 transition"
-        >
-          Voltar
-        </button>
-      </div>
     </div>
   );
 };

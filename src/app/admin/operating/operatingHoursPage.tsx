@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { doc, getDoc, setDoc, updateDoc, collection, onSnapshot, addDoc, deleteDoc } from "firebase/firestore";
@@ -30,20 +31,21 @@ export type OperatingHours = {
 // Atualize a interface de exceção para incluir, se necessário, os horários (caso a exceção libere um dia inativo)
 interface Exception {
   id?: string;
-  date: string;    // formato "YYYY-MM-DD"
+  date: string;    // Formato "YYYY-MM-DD"
   status: "blocked" | "available";
   message?: string;
-  open?: string;   // horário de abertura para exceção (opcional)
-  close?: string;  // horário de fechamento para exceção (opcional)
+  open?: string;   // Horário de abertura para exceção (opcional)
+  close?: string;  // Horário de fechamento para exceção (opcional)
 }
 
 export default function OperatingHoursPage() {
+  const router = useRouter();
   const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Estado para as exceções
   const [exceptions, setExceptions] = useState<Exception[]>([]);
-  // Ao criar uma nova exceção, se o status for "available", poderemos definir os horários
+  // Estado para nova exceção (para criação)
   const [newException, setNewException] = useState<Exception>({
     date: "",
     status: "blocked",
@@ -77,7 +79,7 @@ export default function OperatingHoursPage() {
       setLoading(false);
     });
 
-    // Configura listener para as exceções (subcoleção)
+    // Listener para as exceções (subcoleção)
     const exceptionsRef = collection(db, "configuracoes", "operatingHours", "exceptions");
     const unsubscribe = onSnapshot(exceptionsRef, (snapshot) => {
       const exList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } )) as Exception[];
@@ -105,7 +107,6 @@ export default function OperatingHoursPage() {
       alert("Informe uma data para a exceção.");
       return;
     }
-    // Se o status for "available", verifique se os horários foram informados (para liberar um dia inativo)
     if (newException.status === "available" && (!newException.open || !newException.close)) {
       alert("Para liberar um dia inativo, informe os horários de abertura e fechamento.");
       return;
@@ -204,6 +205,15 @@ export default function OperatingHoursPage() {
   return (
     <div className="min-h-screen bg-black text-white">
       <Header />
+      {/* Botão Voltar alinhado à esquerda */}
+      <div className="px-4 pt-6">
+        <button
+          onClick={() => router.back()}
+          className="bg-gray-500 px-4 py-2 rounded hover:bg-gray-600 transition text-white"
+        >
+          Voltar
+        </button>
+      </div>
       <main className="py-20 px-4">
         <h1 className="text-3xl font-bold mb-6">Configuração de Horários</h1>
 
@@ -226,7 +236,7 @@ export default function OperatingHoursPage() {
           <h2 className="text-2xl font-semibold mb-4">Exceções (Datas Específicas)</h2>
           <div className="mb-4">
             <div className="flex gap-4 items-center mb-2">
-              <label className="block">Data da Exceção:</label>
+              <label className="mr-2">Data da Exceção:</label>
               <input
                 type="date"
                 value={newException.date}
@@ -237,7 +247,7 @@ export default function OperatingHoursPage() {
               />
             </div>
             <div className="flex gap-4 items-center mb-2">
-              <label>Estado:</label>
+              <label className="mr-2">Estado:</label>
               <select
                 value={newException.status}
                 onChange={(e) =>
@@ -249,7 +259,6 @@ export default function OperatingHoursPage() {
                 <option value="available">Liberado</option>
               </select>
             </div>
-            {/* Se o status for "available", exibe inputs para definir os horários */}
             {newException.status === "available" && (
               <div className="flex gap-4 items-center mb-2">
                 <div>
