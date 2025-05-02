@@ -104,67 +104,63 @@ interface Barber {
 interface BarberWithSchedule extends Barber {
   // Em Firebase, o campo "horarios" contém os dias diretamente.
   horarios?: OperatingHours | null;
+  // As exceções individuais para o barbeiro podem estar armazenadas apesar de não constar na interface original.
+  exceptions?: any[];
 }
 
 // ----------------------
 // Availability Calculation Functions
 // ----------------------
 
-// Calcula a configuração efetiva para um barbeiro na data especificada,
-// utilizando a configuração individual se existir ou a global, considerando exceções.
+// Função modificada para verificar primeiro se o barbeiro possui configuração individual e exceções armazenadas em seu documento.
+// Se o barbeiro tiver um array de exceções (campo "exceptions"), ele será utilizado para verificar a data selecionada; caso contrário, usa-se o parâmetro globalExceptions.
 function getEffectiveDayConfig(
   barber: BarberWithSchedule,
   date: Date,
   globalOperatingHours: OperatingHours,
   globalExceptions: any[]
 ): DayConfig | null {
-  console.log(`Calculating config for barber: ${barber.name}`);
   const dayName = getDayName(date);
   const normalizedDate = getLocalDateString(date);
-  let config: DayConfig | undefined;
 
+  // Se houver configuração individual definida (horarios) para o dia, use-a.
+  let individualConfig: DayConfig | null = null;
   if (barber.horarios && barber.horarios[dayName] !== undefined) {
-    config = barber.horarios[dayName];
-    console.log(
-      `Barber ${barber.name}: Found individual config for ${dayName} (${normalizedDate}):`,
-      config
-    );
-  } else {
-    console.log(
-      `Barber ${barber.name}: No individual config for ${dayName} (${normalizedDate}). Using global.`
-    );
-    config = globalOperatingHours[dayName];
-    console.log(
-      `Barber ${barber.name}: Global config for ${dayName} (${normalizedDate}):`,
-      config
-    );
+    individualConfig = barber.horarios[dayName];
+    console.log(`Barber ${barber.name}: Using individual config for ${dayName} (${normalizedDate}).`);
   }
 
-  // Verifica exceções globais
-  const exception = globalExceptions.find((ex: any) => ex.date === normalizedDate);
-  if (exception) {
-    console.log(`Exception for ${barber.name} on ${normalizedDate}:`, exception);
-    if (exception.status === "blocked") {
-      console.log(`Day ${normalizedDate} blocked by exception.`);
-      return null;
-    }
-    if (exception.status === "available" && exception.open && exception.close) {
-      console.log(
-        `Day ${normalizedDate} opened by exception: ${exception.open} - ${exception.close}`
-      );
-      return { open: exception.open, close: exception.close, active: true };
+  // Verificar exceções: priorize as exceções do barbeiro (armazenadas no campo "exceptions") se existirem,
+  // caso contrário, utilize as exceções globais.
+  const effectiveExceptions = barber.exceptions && barber.exceptions.length > 0 ? barber.exceptions : globalExceptions;
+  if (effectiveExceptions) {
+    const exception = effectiveExceptions.find((ex: any) => ex.date === normalizedDate);
+    if (exception) {
+      console.log(`Exception for ${barber.name} on ${normalizedDate}:`, exception);
+      if (exception.status === "blocked") {
+        console.log(`Day ${normalizedDate} blocked by exception.`);
+        return null;
+      }
+      if (exception.status === "available" && exception.open && exception.close) {
+        console.log(`Day ${normalizedDate} opened by exception: ${exception.open} - ${exception.close}`);
+        return { open: exception.open, close: exception.close, active: true };
+      }
     }
   }
 
-  if (!config || !config.active || !config.open || !config.close) {
-    console.log(`Invalid config for ${barber.name} on ${dayName}:`, config);
-    return null;
+  // Se individualConfig foi encontrada, use-a.
+  if (individualConfig) {
+    return individualConfig && individualConfig.active && individualConfig.open && individualConfig.close
+      ? individualConfig
+      : null;
   }
-  console.log(`Effective config for ${barber.name} on ${dayName}:`, config);
-  return config;
+
+  // Caso contrário, use a configuração global.
+  const globalConfig = globalOperatingHours[dayName];
+  return globalConfig && globalConfig.active && globalConfig.open && globalConfig.close ? globalConfig : null;
 }
 
-// A partir dos free slots individuais (fullSlots menos os slots reservados) de cada barbeiro disponível,
+// A partir dos free slots individuais de cada barbeiro disponível (fullSlots menos os slots reservados),
 // retorna a união desses free slots para o dia.
 function getUnionFreeSlots(
   date: Date,
@@ -266,6 +262,7 @@ const Agendamento: React.FC = () => {
             id: doc.id,
             name: data.name as string,
             horarios: data.horarios || null,
+            exceptions: data.exceptions || [] // Adiciona as exceções do barbeiro
           } as BarberWithSchedule;
         });
         setBarberList(list);
@@ -490,7 +487,6 @@ const Agendamento: React.FC = () => {
           getEffectiveDayConfig(b, selectedDate, operatingHours || defaultOperatingHours, exceptions)
         );
         let availableBarber: BarberWithSchedule | null = null;
-        // Calcula quantos slots são necessários para o serviço.
         const slotsNeeded = Math.ceil(selectedService.duration / 30);
         for (const barber of availableBarbeiros) {
           const effectiveConfig = getEffectiveDayConfig(
@@ -505,7 +501,6 @@ const Agendamento: React.FC = () => {
           if (startIndex === -1 || startIndex + slotsNeeded > fullSlots.length) continue;
           const requiredForBarber = fullSlots.slice(startIndex, startIndex + slotsNeeded);
           const booked = bookedSlotsByBarber[barber.id] || [];
-          // Se todos os slots consecutivos necessários estiverem livres para esse barbeiro:
           if (!requiredForBarber.some((slot) => booked.includes(slot))) {
             availableBarber = barber;
             openTime = effectiveConfig.open;
@@ -517,7 +512,6 @@ const Agendamento: React.FC = () => {
           setFeedback("Horário não disponível. Selecione outro horário.");
           return;
         }
-        // Aqui, corrigimos: usamos availableBarber em vez de availableBarbeiros[0]
       }
     }
     if (!openTime || !closeTime) {
