@@ -21,10 +21,10 @@ import Footer from "@/components/Footer";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
 
 // ----------------------
-// Helpers and Basic Functions
+// Helper Functions
 // ----------------------
 
-// Format a Date as "YYYY-MM-DD"
+// Formata uma data no formato "YYYY-MM-DD"
 function getLocalDateString(date: Date): string {
   const year = date.getFullYear();
   const month = ("0" + (date.getMonth() + 1)).slice(-2);
@@ -32,13 +32,13 @@ function getLocalDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// Return the day name (in Portuguese) for the date
+// Retorna o nome do dia (em português) a partir da data
 function getDayName(date: Date): keyof OperatingHours {
   const days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
   return days[date.getDay()] as keyof OperatingHours;
 }
 
-// Generate time slots between start and end times with a given interval (in minutes)
+// Gera os slots de horário entre um início e um fim com um intervalo (em minutos)
 function generateSlots(start: string, end: string, interval: number): string[] {
   const [startHour, startMinute] = start.split(":").map(Number);
   const [endHour, endMinute] = end.split(":").map(Number);
@@ -48,12 +48,14 @@ function generateSlots(start: string, end: string, interval: number): string[] {
   for (let time = startTotal; time <= endTotal; time += interval) {
     const hour = Math.floor(time / 60);
     const minute = time % 60;
-    slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
+    slots.push(
+      `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
+    );
   }
   return slots;
 }
 
-// Group slots into periods: morning, afternoon, and evening
+// Agrupa os slots em períodos para exibição (manhã, tarde e noite)
 function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite: string[] } {
   const manha = slots.filter((slot) => slot < "12:00");
   const tarde = slots.filter((slot) => slot >= "12:00" && slot < "17:00");
@@ -65,14 +67,14 @@ function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite:
 // Interfaces and Constants
 // ----------------------
 
-// Interface for a day
+// Interface para configuração de um dia
 interface DayConfig {
   open?: string;
   close?: string;
   active: boolean;
 }
 
-// OperatingHours now has days directly, without "diasSemana"
+// OperatingHours: os dias estão definidos diretamente (sem wrapper "diasSemana")
 export interface OperatingHours {
   domingo: DayConfig;
   segunda: DayConfig;
@@ -83,7 +85,7 @@ export interface OperatingHours {
   sábado: DayConfig;
 }
 
-// Global default configuration (using the new structure)
+// Configuração global padrão (usada se necessário)
 const defaultOperatingHours: OperatingHours = {
   segunda: { open: "08:00", close: "18:00", active: true },
   terça: { open: "08:00", close: "18:00", active: true },
@@ -100,37 +102,45 @@ interface Barber {
 }
 
 interface BarberWithSchedule extends Barber {
-  // In Firebase, "horarios" contains days directly. If absent, it will be null.
+  // Em Firebase, o campo "horarios" contém os dias diretamente.
   horarios?: OperatingHours | null;
 }
 
 // ----------------------
-// Functions to Calculate Effective Availability
+// Availability Calculation Functions
 // ----------------------
 
-// Returns the effective configuration for a barber on a given date,
-// taking into account the barber's individual settings and global exceptions.
-// Logs are added for debugging.
+// Calcula a configuração efetiva para um barbeiro na data especificada,
+// utilizando a configuração individual se existir ou a global, considerando exceções.
 function getEffectiveDayConfig(
   barber: BarberWithSchedule,
   date: Date,
   globalOperatingHours: OperatingHours,
   globalExceptions: any[]
 ): DayConfig | null {
-  console.log(`Calculating config for barber: ${barber.name}`, barber);
+  console.log(`Calculating config for barber: ${barber.name}`);
   const dayName = getDayName(date);
   const normalizedDate = getLocalDateString(date);
   let config: DayConfig | undefined;
 
   if (barber.horarios && barber.horarios[dayName] !== undefined) {
     config = barber.horarios[dayName];
-    console.log(`Barber ${barber.name}: Found individual config for ${dayName} (${normalizedDate}):`, config);
+    console.log(
+      `Barber ${barber.name}: Found individual config for ${dayName} (${normalizedDate}):`,
+      config
+    );
   } else {
-    console.log(`Barber ${barber.name}: No individual config for ${dayName} (${normalizedDate}). Using global.`);
+    console.log(
+      `Barber ${barber.name}: No individual config for ${dayName} (${normalizedDate}). Using global.`
+    );
     config = globalOperatingHours[dayName];
-    console.log(`Barber ${barber.name}: Global config for ${dayName} (${normalizedDate}):`, config);
+    console.log(
+      `Barber ${barber.name}: Global config for ${dayName} (${normalizedDate}):`,
+      config
+    );
   }
 
+  // Verifica exceções globais
   const exception = globalExceptions.find((ex: any) => ex.date === normalizedDate);
   if (exception) {
     console.log(`Exception for ${barber.name} on ${normalizedDate}:`, exception);
@@ -139,7 +149,9 @@ function getEffectiveDayConfig(
       return null;
     }
     if (exception.status === "available" && exception.open && exception.close) {
-      console.log(`Day ${normalizedDate} opened by exception: ${exception.open} - ${exception.close}`);
+      console.log(
+        `Day ${normalizedDate} opened by exception: ${exception.open} - ${exception.close}`
+      );
       return { open: exception.open, close: exception.close, active: true };
     }
   }
@@ -148,43 +160,38 @@ function getEffectiveDayConfig(
     console.log(`Invalid config for ${barber.name} on ${dayName}:`, config);
     return null;
   }
-
   console.log(`Effective config for ${barber.name} on ${dayName}:`, config);
   return config;
 }
 
-// Generates the union of available slots from all barbers available on the date.
-function getUnionSlotsForDate(
+// A partir dos free slots individuais (fullSlots menos os slots reservados) de cada barbeiro disponível,
+// retorna a união desses free slots para o dia.
+function getUnionFreeSlots(
   date: Date,
-  barberList: BarberWithSchedule[],
-  globalOperatingHours: OperatingHours | null,
-  globalExceptions: any[]
+  availableBarbers: BarberWithSchedule[],
+  globalOperatingHours: OperatingHours,
+  globalExceptions: any[],
+  bookedSlotsMap: Record<string, string[]>
 ): string[] {
   const unionSet = new Set<string>();
-  barberList.forEach((barber) => {
+  availableBarbers.forEach((barber) => {
     const effectiveConfig = getEffectiveDayConfig(
       barber,
       date,
-      globalOperatingHours || defaultOperatingHours,
+      globalOperatingHours,
       globalExceptions
     );
     if (effectiveConfig) {
-      const slots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
-      console.log(`Slots for ${barber.name} on ${getDayName(date)} (${getLocalDateString(date)}):`, slots);
-      slots.forEach((slot) => unionSet.add(slot));
+      const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
+      const booked = bookedSlotsMap[barber.id] || [];
+      const freeSlots = fullSlots.filter((slot) => !booked.includes(slot));
+      console.log(`Free slots for ${barber.name}:`, freeSlots);
+      freeSlots.forEach((slot) => unionSet.add(slot));
     }
   });
   const unionArray = Array.from(unionSet).sort();
-  console.log(`UnionSlots for ${getLocalDateString(date)}:`, unionArray);
+  console.log(`Union of free slots for ${getLocalDateString(date)}:`, unionArray);
   return unionArray;
-}
-
-// Helper to determine if a day is available globally using a dummy barber.
-function isDayAvailable(date: Date, operatingHours: OperatingHours, exceptions: any[]): boolean {
-  const dummyBarber: BarberWithSchedule = { id: "dummy", name: "dummy", horarios: operatingHours };
-  const effective = getEffectiveDayConfig(dummyBarber, date, operatingHours, exceptions);
-  console.log(`Check if ${getLocalDateString(date)} is available (dummy):`, effective !== null);
-  return effective !== null;
 }
 
 // ----------------------
@@ -197,23 +204,30 @@ const Agendamento: React.FC = () => {
   const { operatingHours, exceptions } = useOperatingHours();
 
   const [step, setStep] = useState<number>(1);
-  const [selectedService, setSelectedService] = useState<{ name: string; duration: number; value: number } | null>(null);
-  const [serviceOptions, setServiceOptions] = useState<{ name: string; duration: number; value: number }[]>([]);
+  const [selectedService, setSelectedService] = useState<{
+    name: string;
+    duration: number;
+    value: number;
+  } | null>(null);
+  const [serviceOptions, setServiceOptions] = useState<
+    { name: string; duration: number; value: number }[]
+  >([]);
   const [selectedBarber, setSelectedBarber] = useState<Barber | "Qualquer" | "">("");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
-  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string>("");
   const [showPopup, setShowPopup] = useState<boolean>(false);
   const [userName, setUserName] = useState<string>("");
   const [barberList, setBarberList] = useState<BarberWithSchedule[]>([]);
-  const [computedSlots, setComputedSlots] = useState<{ manha: string[]; tarde: string[]; noite: string[] }>({
-    manha: [],
-    tarde: [],
-    noite: [],
-  });
+  const [computedSlots, setComputedSlots] = useState<{
+    manha: string[];
+    tarde: string[];
+    noite: string[];
+  }>({ manha: [], tarde: [], noite: [] });
+  // Mapeia cada barberId para os slots já reservados
+  const [bookedSlotsByBarber, setBookedSlotsByBarber] = useState<Record<string, string[]>>({});
 
-  // States for individual barber configuration (if applicable)
+  // States para configuração individual, se um barbeiro específico for selecionado
   const [indivOperatingHours, setIndivOperatingHours] = useState<OperatingHours | null>(null);
   const [indivExceptions, setIndivExceptions] = useState<any[]>([]);
 
@@ -224,7 +238,7 @@ const Agendamento: React.FC = () => {
   }, [user, loading, router]);
 
   useEffect(() => {
-    const fetchUserData = async () => {
+    async function fetchUserData() {
       if (user && !loading) {
         try {
           const userDocRef = doc(db, "usuarios", user.uid);
@@ -237,7 +251,7 @@ const Agendamento: React.FC = () => {
           console.error("Error fetching user data:", error);
         }
       }
-    };
+    }
     fetchUserData();
   }, [user, loading]);
 
@@ -269,7 +283,11 @@ const Agendamento: React.FC = () => {
         const snapshot = await getDocs(q);
         const services = snapshot.docs.map((doc) => {
           const data = doc.data();
-          return { name: data.name, duration: Number(data.duration), value: Number(data.value) };
+          return {
+            name: data.name,
+            duration: Number(data.duration),
+            value: Number(data.value),
+          };
         });
         setServiceOptions(services);
       } catch (error) {
@@ -307,40 +325,67 @@ const Agendamento: React.FC = () => {
     }
   }, [selectedBarber]);
 
-  // For configurations, we use the "horarios" object directly (new structure)
-  const currentOperatingHours = selectedBarber !== "Qualquer" && indivOperatingHours ? indivOperatingHours : operatingHours;
-  const currentExceptions = selectedBarber !== "Qualquer" && indivExceptions.length > 0 ? indivExceptions : exceptions;
+  const currentOperatingHours =
+    selectedBarber !== "Qualquer" && indivOperatingHours ? indivOperatingHours : operatingHours;
+  const currentExceptions =
+    selectedBarber !== "Qualquer" && indivExceptions.length > 0 ? indivExceptions : exceptions;
   const effectiveOperatingHours: OperatingHours = currentOperatingHours || defaultOperatingHours;
   const effectiveExceptions: any[] = currentExceptions || [];
 
+  // Atualiza os agendamentos do dia para TODOS os barbeiros
+  useEffect(() => {
+    if (!selectedDate) return;
+    const normalizedDateStr = getLocalDateString(selectedDate);
+    const q = query(
+      collection(db, "agendamentos"),
+      where("dateStr", "==", normalizedDateStr)
+    );
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const map: Record<string, string[]> = {};
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const bId = data.barberId;
+        let slots: string[] = [];
+        if (data.timeSlots) {
+          slots = data.timeSlots;
+        } else if (data.timeSlot) {
+          slots = [data.timeSlot];
+        }
+        if (map[bId]) {
+          map[bId] = Array.from(new Set([...map[bId], ...slots]));
+        } else {
+          map[bId] = slots;
+        }
+      });
+      setBookedSlotsByBarber(map);
+    });
+    return () => unsubscribe();
+  }, [selectedDate]);
+
+  // Calcula os free slots (computedSlots)
   useEffect(() => {
     if (!selectedDate) {
-      setBookedSlots([]);
+      setComputedSlots({ manha: [], tarde: [], noite: [] });
       return;
     }
-    const normalizedDateStr = getLocalDateString(selectedDate);
     if (selectedBarber === "Qualquer") {
-      // Filter available barbers for the selected date
       const availableBarbers = barberList.filter((b) =>
         getEffectiveDayConfig(b, selectedDate, operatingHours || defaultOperatingHours, exceptions)
       );
       if (availableBarbers.length === 0) {
         setFeedback("O agendamento não está disponível para a data selecionada.");
-        setBookedSlots([]);
         setComputedSlots({ manha: [], tarde: [], noite: [] });
-      } else {
-        const unionSlots = getUnionSlotsForDate(selectedDate, availableBarbers, operatingHours, exceptions);
-        if (unionSlots.length === 0) {
-          setFeedback("O agendamento não está disponível para a data selecionada.");
-          setBookedSlots([]);
-          setComputedSlots({ manha: [], tarde: [], noite: [] });
-        } else {
-          setFeedback("");
-          setComputedSlots(groupSlots(unionSlots));
-        }
+        return;
       }
+      const unionFreeSlots = getUnionFreeSlots(
+        selectedDate,
+        availableBarbers,
+        operatingHours || defaultOperatingHours,
+        exceptions,
+        bookedSlotsByBarber
+      );
+      setComputedSlots(groupSlots(unionFreeSlots));
     } else {
-      // For a specific barber, calculate its effective config
       const specificBarber = selectedBarber as BarberWithSchedule;
       const effectiveConfig = getEffectiveDayConfig(
         specificBarber,
@@ -351,72 +396,14 @@ const Agendamento: React.FC = () => {
       if (!effectiveConfig) {
         setFeedback("O agendamento não está disponível para a data selecionada para o barbeiro escolhido.");
         setComputedSlots({ manha: [], tarde: [], noite: [] });
-        setBookedSlots([]);
-        return;
-      } else {
-        setFeedback("");
-        const slots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
-        setComputedSlots(groupSlots(slots));
-      }
-    }
-    let q;
-    if (selectedBarber === "Qualquer") {
-      // Use only available barbers' IDs for the query
-      const availableBarbers = barberList.filter((b) =>
-        getEffectiveDayConfig(b, selectedDate, operatingHours || defaultOperatingHours, exceptions)
-      );
-      if (availableBarbers.length === 0) {
-        setBookedSlots([]);
         return;
       }
-      const availableBarberIds = availableBarbers.map((b) => b.id);
-      q = query(
-        collection(db, "agendamentos"),
-        where("dateStr", "==", normalizedDateStr),
-        where("barberId", "in", availableBarberIds)
-      );
-      // When counting bookings, use availableBarbers.length as threshold
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const slotCount: { [key: string]: number } = {};
-        querySnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          let slots: string[] = [];
-          if (data.timeSlots) {
-            slots = data.timeSlots;
-          } else if (data.timeSlot) {
-            slots = [data.timeSlot];
-          }
-          slots.forEach((slot) => {
-            slotCount[slot] = (slotCount[slot] || 0) + 1;
-          });
-        });
-        const fullyBookedSlots = Object.keys(slotCount).filter(
-          (slot) => slotCount[slot] >= availableBarbers.length
-        );
-        setBookedSlots(fullyBookedSlots);
-      });
-      return () => unsubscribe();
-    } else {
-      q = query(
-        collection(db, "agendamentos"),
-        where("dateStr", "==", normalizedDateStr),
-        where("barberId", "==", (selectedBarber as Barber).id)
-      );
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const booked: string[] = [];
-        querySnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.timeSlots) {
-            booked.push(...data.timeSlots);
-          } else if (data.timeSlot) {
-            booked.push(data.timeSlot);
-          }
-        });
-        setBookedSlots(Array.from(new Set(booked)));
-      });
-      return () => unsubscribe();
+      const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
+      const barberBooked = bookedSlotsByBarber[specificBarber.id] || [];
+      const free = fullSlots.filter((slot) => !barberBooked.includes(slot));
+      setComputedSlots(groupSlots(free));
     }
-  }, [selectedDate, selectedBarber, barberList, effectiveOperatingHours, effectiveExceptions, operatingHours, exceptions]);
+  }, [selectedDate, selectedBarber, barberList, bookedSlotsByBarber, operatingHours, exceptions, effectiveExceptions]);
 
   const handleNext = () => {
     if (step === 1 && !selectedService) {
@@ -499,12 +486,13 @@ const Agendamento: React.FC = () => {
           closeTime = dayConfig.close;
         }
       } else {
-        let availableBarber: BarberWithSchedule | null = null;
-        // Filter only available barbers for this date
-        const availableBarbers = barberList.filter((b) =>
+        const availableBarbeiros = barberList.filter((b) =>
           getEffectiveDayConfig(b, selectedDate, operatingHours || defaultOperatingHours, exceptions)
         );
-        for (const barber of availableBarbers) {
+        let availableBarber: BarberWithSchedule | null = null;
+        // Calcula quantos slots são necessários para o serviço.
+        const slotsNeeded = Math.ceil(selectedService.duration / 30);
+        for (const barber of availableBarbeiros) {
           const effectiveConfig = getEffectiveDayConfig(
             barber,
             selectedDate,
@@ -512,17 +500,24 @@ const Agendamento: React.FC = () => {
             exceptions
           );
           if (!effectiveConfig) continue;
-          const slots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
-          if (!slots.includes(selectedTimeSlot)) continue;
-          availableBarber = barber;
-          openTime = effectiveConfig.open;
-          closeTime = effectiveConfig.close;
-          break;
+          const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
+          const startIndex = fullSlots.indexOf(selectedTimeSlot);
+          if (startIndex === -1 || startIndex + slotsNeeded > fullSlots.length) continue;
+          const requiredForBarber = fullSlots.slice(startIndex, startIndex + slotsNeeded);
+          const booked = bookedSlotsByBarber[barber.id] || [];
+          // Se todos os slots consecutivos necessários estiverem livres para esse barbeiro:
+          if (!requiredForBarber.some((slot) => booked.includes(slot))) {
+            availableBarber = barber;
+            openTime = effectiveConfig.open;
+            closeTime = effectiveConfig.close;
+            break;
+          }
         }
         if (!availableBarber) {
           setFeedback("Horário não disponível. Selecione outro horário.");
           return;
         }
+        // Aqui, corrigimos: usamos availableBarber em vez de availableBarbeiros[0]
       }
     }
     if (!openTime || !closeTime) {
@@ -537,25 +532,15 @@ const Agendamento: React.FC = () => {
       return;
     }
     const requiredSlots = dynamicSlots.slice(index, index + slotsNeeded);
-    const conflict = requiredSlots.some((slot) => bookedSlots.includes(slot));
-    if (conflict) {
-      setFeedback("Horário não disponível. Selecione outro horário.");
-      return;
-    }
     if (selectedBarber !== "Qualquer") {
-      if (bookedSlots.some((slot) => requiredSlots.includes(slot))) {
-        setFeedback("Horário não disponível. Selecione outro horário.");
-        return;
-      }
       await saveAppointment(selectedBarber as Barber, requiredSlots);
     } else {
-      // For "Qualquer Barbeiro", we already filtered availableBarbers in the bookedSlots useEffect.
-      // Use that same logic here:
-      const availableBarbers = barberList.filter((b) =>
+      const availableBarbeiros = barberList.filter((b) =>
         getEffectiveDayConfig(b, selectedDate, operatingHours || defaultOperatingHours, exceptions)
       );
       let availableBarber: BarberWithSchedule | null = null;
-      for (const barber of availableBarbers) {
+      const slotsNeeded = Math.ceil(selectedService.duration / 30);
+      for (const barber of availableBarbeiros) {
         const effectiveConfig = getEffectiveDayConfig(
           barber,
           selectedDate,
@@ -563,8 +548,12 @@ const Agendamento: React.FC = () => {
           exceptions
         );
         if (!effectiveConfig) continue;
-        const slots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
-        if (!slots.includes(selectedTimeSlot)) continue;
+        const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
+        const startIndex = fullSlots.indexOf(selectedTimeSlot);
+        if (startIndex === -1 || startIndex + slotsNeeded > fullSlots.length) continue;
+        const requiredForBarber = fullSlots.slice(startIndex, startIndex + slotsNeeded);
+        const booked = bookedSlotsByBarber[barber.id] || [];
+        if (requiredForBarber.some((slot) => booked.includes(slot))) continue;
         availableBarber = barber;
         break;
       }
@@ -596,7 +585,8 @@ const Agendamento: React.FC = () => {
         <h1 className="text-3xl font-bold text-center mb-8">Agendamento</h1>
         <div className="max-w-3xl mx-auto bg-gray-900 p-4 rounded shadow mb-6">
           <p className="text-lg text-center">
-            Agendamento para: <strong>{userName || user?.email || "Usuário desconhecido"}</strong>
+            Agendamento para:{" "}
+            <strong>{userName || user?.email || "Usuário desconhecido"}</strong>
           </p>
         </div>
         <div className="max-w-3xl mx-auto bg-gray-900 p-6 rounded shadow">
@@ -699,23 +689,21 @@ const Agendamento: React.FC = () => {
                           {periodKey === "manha" ? "manhã" : periodKey === "tarde" ? "tarde" : "noite"}
                         </h4>
                         <div className="flex flex-wrap gap-2 mt-1">
-                          {slots
-                            .filter((slot) => !bookedSlots.includes(slot))
-                            .map((slot) => (
-                              <button
-                                key={slot}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedTimeSlot(slot);
-                                  setFeedback("");
-                                }}
-                                className={`px-3 py-1 border rounded ${
-                                  selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
-                                }`}
-                              >
-                                {slot}
-                              </button>
-                            ))}
+                          {slots.map((slot) => (
+                            <button
+                              key={slot}
+                              type="button"
+                              onClick={() => {
+                                setSelectedTimeSlot(slot);
+                                setFeedback("");
+                              }}
+                              className={`px-3 py-1 border rounded ${
+                                selectedTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
+                              }`}
+                            >
+                              {slot}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     ))}
@@ -723,14 +711,23 @@ const Agendamento: React.FC = () => {
                 </>
               )}
               <div className="flex justify-between mt-6">
-                <button type="button" onClick={handleBack} className="bg-gray-500 text-white px-4 py-2 rounded">
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="bg-gray-500 text-white px-4 py-2 rounded"
+                >
                   Voltar
                 </button>
-                <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
+                <button
+                  type="submit"
+                  className="bg-blue-500 text-white px-4 py-2 rounded"
+                >
                   Confirmar Agendamento
                 </button>
               </div>
-              {feedback && <p className="mt-4 text-center text-red-500">{feedback}</p>}
+              {feedback && (
+                <p className="mt-4 text-center text-red-500">{feedback}</p>
+              )}
             </form>
           )}
         </div>

@@ -19,7 +19,7 @@ const AdminMain: React.FC = () => {
               href="/admin/promotion"
               className="w-full md:w-1/2 text-center py-3 bg-red-500 text-white rounded hover:bg-red-600 transition"
             >
-              Promover Usuários
+              Gestão de Usuários
             </Link>
             <Link
               href="/admin/dashboard"

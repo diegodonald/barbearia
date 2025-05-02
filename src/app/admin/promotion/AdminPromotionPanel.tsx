@@ -8,9 +8,12 @@ import {
   onSnapshot,
   updateDoc,
   doc,
+  setDoc,
+  getDoc
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
+import { useOperatingHours } from "@/hooks/useOperatingHours";
 
 // Define uma interface para os dados do usuário
 interface User {
@@ -20,9 +23,64 @@ interface User {
   role: string;
 }
 
+// --- Interfaces e Configuração de Agenda ---
+// Os dias estão definidos diretamente, sem "diasSemana"
+interface DayConfig {
+  open?: string;
+  close?: string;
+  active: boolean;
+}
+
+export interface BarberConfig {
+  horarios: {
+    domingo: DayConfig;
+    segunda: DayConfig;
+    terça: DayConfig;
+    quarta: DayConfig;
+    quinta: DayConfig;
+    sexta: DayConfig;
+    sábado: DayConfig;
+  };
+  exceptions?: Exception[];
+}
+
+interface Exception {
+  id?: string;
+  date: string; // formato "YYYY-MM-DD"
+  status: "blocked" | "available";
+  message?: string;
+  open?: string;
+  close?: string;
+}
+
+// Fallback fixo – usado se a Agenda Global não estiver disponível
+const fallbackConfig: BarberConfig = {
+  horarios: {
+    segunda: { open: "08:00", close: "18:00", active: true },
+    terça: { open: "08:00", close: "18:00", active: true },
+    quarta: { open: "08:00", close: "18:00", active: true },
+    quinta: { open: "08:00", close: "18:00", active: true },
+    sexta: { open: "08:00", close: "18:00", active: true },
+    sábado: { open: "09:00", close: "14:00", active: true },
+    domingo: { active: false },
+  },
+  exceptions: [],
+};
+
 const AdminPromotionPanel: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
+  // Obter dados atuais da Agenda Global
+  const { operatingHours } = useOperatingHours();
+
+  // Helper: retorna a configuração global "achatada"
+  const getGlobalHorarios = (): any => {
+    if (operatingHours) {
+      // Se existir a chave "diasSemana", retorna seu valor; senão, retorna operatingHours diretamente
+      return operatingHours.diasSemana ? operatingHours.diasSemana : operatingHours;
+    }
+    return fallbackConfig.horarios;
+  };
 
   // Estado para armazenar a lista de usuários
   const [users, setUsers] = useState<User[]>([]);
@@ -30,9 +88,9 @@ const AdminPromotionPanel: React.FC = () => {
   const [error, setError] = useState("");
 
   // Estado para filtro por nome
-  const [filterName, setFilterName] = useState<string>("");
+  const [filterName, setFilterName] = useState("");
 
-  // Verifica se o usuário logado possui role "admin"
+  // Verificar se o usuário logado possui role "admin"
   useEffect(() => {
     if (!loading && user) {
       if (user.role !== "admin") {
@@ -63,20 +121,39 @@ const AdminPromotionPanel: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Função para alterar a role do usuário para o valor especificado
+  // Função para alterar a role do usuário para o valor especificado.
+  // Ao promover para "barber", atualiza o documento para incluir a agenda individual com os dados ATUAIS da Agenda Global.
   const changeUserRole = async (userId: string, newRole: string) => {
     try {
       const userDocRef = doc(db, "usuarios", userId);
+      if (newRole === "barber") {
+        const docSnap = await getDoc(userDocRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (!data.horarios) {
+            // Usa os dados atuais da Agenda Global (aplicando o helper que achata a estrutura)
+            const globalConfig = getGlobalHorarios();
+            await setDoc(
+              userDocRef,
+              {
+                horarios: globalConfig,
+                exceptions: [],
+              },
+              { merge: true }
+            );
+            alert("Usuário promovido a Barbeiro com agenda herdada da Agenda Global.");
+          } else {
+            alert("Usuário promovido a Barbeiro com agenda já configurada.");
+          }
+        }
+      } else {
+        alert(
+          `Usuário atualizado para ${
+            newRole === "admin" ? "Admin" : "Cliente"
+          } com sucesso!`
+        );
+      }
       await updateDoc(userDocRef, { role: newRole });
-      alert(
-        `Usuário atualizado para ${
-          newRole === "admin"
-            ? "Admin"
-            : newRole === "barber"
-            ? "Barbeiro"
-            : "Cliente"
-        } com sucesso!`
-      );
     } catch (error) {
       console.error("Erro ao atualizar role do usuário:", error);
       setError("Erro ao atualizar role do usuário.");
@@ -87,7 +164,7 @@ const AdminPromotionPanel: React.FC = () => {
     return <p>Carregando...</p>;
   }
 
-  // Aplica o filtro por nome (além de considerar apenas usuários com role "user", "barber" ou "admin")
+  // Aplica o filtro por nome
   const filteredUsers = users.filter((u) => {
     const matchName = filterName
       ? u.name.toLowerCase().includes(filterName.toLowerCase())
@@ -102,7 +179,7 @@ const AdminPromotionPanel: React.FC = () => {
       </h1>
       {error && <p className="text-red-500 mb-4">{error}</p>}
 
-      {/* Seção de filtro por nome */}
+      {/* Filtro por Nome */}
       <div className="mb-4 flex flex-wrap gap-4 items-end">
         <div>
           <label className="block mb-1">Filtrar por Nome:</label>
@@ -161,9 +238,7 @@ const AdminPromotionPanel: React.FC = () => {
                         <button
                           onClick={() => {
                             if (
-                              window.confirm(
-                                `Deseja promover ${u.name} a Admin?`
-                              )
+                              window.confirm(`Deseja promover ${u.name} a Admin?`)
                             ) {
                               changeUserRole(u.id, "admin");
                             }
