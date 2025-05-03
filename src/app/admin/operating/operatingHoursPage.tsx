@@ -20,6 +20,8 @@ import "react-datepicker/dist/react-datepicker.css";
 // Define a interface para um dia da semana
 interface DayConfig {
   open?: string;
+  breakStart?: string;
+  breakEnd?: string;
   close?: string;
   active: boolean;
 }
@@ -73,12 +75,12 @@ export default function OperatingHoursPage() {
         // Cria configuração padrão caso não exista
         const defaultConfig: OperatingHours = {
           diasSemana: {
-            segunda: { open: "08:00", close: "18:00", active: true },
-            terça: { open: "08:00", close: "18:00", active: true },
-            quarta: { open: "08:00", close: "18:00", active: true },
-            quinta: { open: "08:00", close: "18:00", active: true },
-            sexta: { open: "08:00", close: "18:00", active: true },
-            sábado: { open: "09:00", close: "14:00", active: true },
+            segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+            terça:   { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+            quarta:  { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+            quinta:  { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+            sexta:   { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+            sábado:  { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
             domingo: { active: false },
           },
         };
@@ -173,43 +175,77 @@ export default function OperatingHoursPage() {
           />
         </div>
         {dayConfig.active && (
-          <div className="flex gap-4">
-            <div>
-              <label className="block">Horário de Abertura:</label>
-              <input
-                type="time"
-                value={dayConfig.open || ""}
-                onChange={(e) =>
-                  setOperatingHours({
-                    ...operatingHours,
-                    diasSemana: {
-                      ...operatingHours.diasSemana,
-                      [dayName]: { ...dayConfig, open: e.target.value },
-                    },
-                  })
-                }
-                className="px-2 py-1 bg-gray-700 text-white rounded"
-              />
-            </div>
-            <div>
-              <label className="block">Horário de Fechamento:</label>
-              <input
-                type="time"
-                value={dayConfig.close || ""}
-                onChange={(e) =>
-                  setOperatingHours({
-                    ...operatingHours,
-                    diasSemana: {
-                      ...operatingHours.diasSemana,
-                      [dayName]: { ...dayConfig, close: e.target.value },
-                    },
-                  })
-                }
-                className="px-2 py-1 bg-gray-700 text-white rounded"
-              />
-            </div>
-          </div>
-        )}
+  <div className="flex flex-wrap gap-4">
+    <div>
+      <label className="block">Horário de Abertura:</label>
+      <input
+        type="time"
+        value={dayConfig.open || ""}
+        onChange={(e) =>
+          setOperatingHours({
+            ...operatingHours,
+            diasSemana: {
+              ...operatingHours.diasSemana,
+              [dayName]: { ...dayConfig, open: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+    <div>
+      <label className="block">Início do Intervalo:</label>
+      <input
+        type="time"
+        value={dayConfig.breakStart || ""}
+        onChange={(e) =>
+          setOperatingHours({
+            ...operatingHours,
+            diasSemana: {
+              ...operatingHours.diasSemana,
+              [dayName]: { ...dayConfig, breakStart: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+    <div>
+      <label className="block">Término do Intervalo:</label>
+      <input
+        type="time"
+        value={dayConfig.breakEnd || ""}
+        onChange={(e) =>
+          setOperatingHours({
+            ...operatingHours,
+            diasSemana: {
+              ...operatingHours.diasSemana,
+              [dayName]: { ...dayConfig, breakEnd: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+    <div>
+      <label className="block">Horário de Fechamento:</label>
+      <input
+        type="time"
+        value={dayConfig.close || ""}
+        onChange={(e) =>
+          setOperatingHours({
+            ...operatingHours,
+            diasSemana: {
+              ...operatingHours.diasSemana,
+              [dayName]: { ...dayConfig, close: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+  </div>
+)}
       </div>
     );
   };
