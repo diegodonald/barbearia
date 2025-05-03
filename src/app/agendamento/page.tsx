@@ -39,18 +39,40 @@ function getDayName(date: Date): keyof OperatingHours {
 }
 
 // Gera os slots de horário entre um início e um fim com um intervalo (em minutos)
-function generateSlots(start: string, end: string, interval: number): string[] {
-  const [startHour, startMinute] = start.split(":").map(Number);
+function generateSlots(
+  open: string,
+  breakStart: string | undefined,
+  breakEnd: string | undefined,
+  end: string,
+  interval: number
+): string[] {
+  const [openHour, openMinute] = open.split(":").map(Number);
+  const startTotal = openHour * 60 + openMinute;
   const [endHour, endMinute] = end.split(":").map(Number);
-  const startTotal = startHour * 60 + startMinute;
   const endTotal = endHour * 60 + endMinute;
+
+  let breakStartTotal = -1, breakEndTotal = -1;
+  if (breakStart && breakEnd) {
+    const [bsHour, bsMinute] = breakStart.split(":").map(Number);
+    breakStartTotal = bsHour * 60 + bsMinute;
+    const [beHour, beMinute] = breakEnd.split(":").map(Number);
+    breakEndTotal = beHour * 60 + beMinute;
+  }
+
   const slots: string[] = [];
   for (let time = startTotal; time <= endTotal; time += interval) {
+    // Se os horários de intervalo forem definidos e o slot cair dentro (inclusive) desse período, pula-o
+    if (
+      breakStartTotal >= 0 &&
+      breakEndTotal > 0 &&
+      time >= breakStartTotal &&
+      time <= breakEndTotal
+    ) {
+      continue;
+    }
     const hour = Math.floor(time / 60);
     const minute = time % 60;
-    slots.push(
-      `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
-    );
+    slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
   }
   return slots;
 }
@@ -70,6 +92,8 @@ function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite:
 // Interface para configuração de um dia
 interface DayConfig {
   open?: string;
+  breakStart?: string;
+  breakEnd?: string;
   close?: string;
   active: boolean;
 }
@@ -87,12 +111,12 @@ export interface OperatingHours {
 
 // Configuração global padrão (usada se necessário)
 const defaultOperatingHours: OperatingHours = {
-  segunda: { open: "08:00", close: "18:00", active: true },
-  terça: { open: "08:00", close: "18:00", active: true },
-  quarta: { open: "08:00", close: "18:00", active: true },
-  quinta: { open: "08:00", close: "18:00", active: true },
-  sexta: { open: "08:00", close: "18:00", active: true },
-  sábado: { open: "09:00", close: "14:00", active: true },
+  segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+  terça: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+  quarta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+  quinta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+  sexta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+  sábado: { open: "09:00", breakStart: "12:00", breakEnd: "13:30", close: "14:00", active: true },
   domingo: { active: false },
 };
 
@@ -178,7 +202,13 @@ function getUnionFreeSlots(
       globalExceptions
     );
     if (effectiveConfig) {
-      const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
+      const fullSlots = generateSlots(
+  effectiveConfig.open!,
+  effectiveConfig.breakStart,
+  effectiveConfig.breakEnd,
+  effectiveConfig.close!,
+  30
+);
       const booked = bookedSlotsMap[barber.id] || [];
       const freeSlots = fullSlots.filter((slot) => !booked.includes(slot));
       console.log(`Free slots for ${barber.name}:`, freeSlots);
@@ -395,7 +425,13 @@ const Agendamento: React.FC = () => {
         setComputedSlots({ manha: [], tarde: [], noite: [] });
         return;
       }
-      const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
+      const fullSlots = generateSlots(
+  effectiveConfig.open!,
+  effectiveConfig.breakStart,
+  effectiveConfig.breakEnd,
+  effectiveConfig.close!,
+  30
+);
       const barberBooked = bookedSlotsByBarber[specificBarber.id] || [];
       const free = fullSlots.filter((slot) => !barberBooked.includes(slot));
       setComputedSlots(groupSlots(free));
@@ -457,68 +493,60 @@ const Agendamento: React.FC = () => {
       setFeedback("Serviço não selecionado.");
       return;
     }
-    let openTime: string | undefined;
-    let closeTime: string | undefined;
-    const normalized = getLocalDateString(selectedDate);
-    const exception = effectiveExceptions.find(
-      (ex) =>
-        ex.date === normalized &&
-        ex.status === "available" &&
-        ex.open &&
-        ex.close
-    );
-    if (exception) {
-      openTime = exception.open;
-      closeTime = exception.close;
-    } else {
-      const dayName = getDayName(selectedDate);
-      if (selectedBarber !== "Qualquer") {
-        const dayConfig = effectiveOperatingHours[dayName];
-        if (!dayConfig) {
-          setFeedback("Horários não configurados para o dia selecionado.");
-          return;
-        }
-        if (dayConfig.active && dayConfig.open && dayConfig.close) {
-          openTime = dayConfig.open;
-          closeTime = dayConfig.close;
-        }
-      } else {
-        const availableBarbeiros = barberList.filter((b) =>
-          getEffectiveDayConfig(b, selectedDate, operatingHours || defaultOperatingHours, exceptions)
-        );
-        let availableBarber: BarberWithSchedule | null = null;
-        const slotsNeeded = Math.ceil(selectedService.duration / 30);
-        for (const barber of availableBarbeiros) {
-          const effectiveConfig = getEffectiveDayConfig(
-            barber,
-            selectedDate,
-            operatingHours || defaultOperatingHours,
-            exceptions
-          );
-          if (!effectiveConfig) continue;
-          const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
-          const startIndex = fullSlots.indexOf(selectedTimeSlot);
-          if (startIndex === -1 || startIndex + slotsNeeded > fullSlots.length) continue;
-          const requiredForBarber = fullSlots.slice(startIndex, startIndex + slotsNeeded);
-          const booked = bookedSlotsByBarber[barber.id] || [];
-          if (!requiredForBarber.some((slot) => booked.includes(slot))) {
-            availableBarber = barber;
-            openTime = effectiveConfig.open;
-            closeTime = effectiveConfig.close;
-            break;
-          }
-        }
-        if (!availableBarber) {
-          setFeedback("Horário não disponível. Selecione outro horário.");
-          return;
-        }
-      }
-    }
-    if (!openTime || !closeTime) {
+// Declare variáveis para os horários e os intervalos
+let openTime: string | undefined;
+let closeTime: string | undefined;
+let breakStartTime: string | undefined;
+let breakEndTime: string | undefined;
+
+const normalized = getLocalDateString(selectedDate);
+const exception = effectiveExceptions.find(
+  (ex) =>
+    ex.date === normalized &&
+    ex.status === "available" &&
+    ex.open &&
+    ex.close
+);
+if (exception) {
+  openTime = exception.open;
+  closeTime = exception.close;
+  // Se houver exceção, você pode optar por não usar intervalos
+  breakStartTime = undefined;
+  breakEndTime = undefined;
+} else {
+  const dayName = getDayName(selectedDate);
+  if (selectedBarber !== "Qualquer") {
+    const dayConfig = effectiveOperatingHours[dayName];
+    if (!dayConfig) {
       setFeedback("Horários não configurados para o dia selecionado.");
       return;
     }
-    const dynamicSlots = generateSlots(openTime, closeTime, 30);
+    if (dayConfig.active && dayConfig.open && dayConfig.close) {
+      openTime = dayConfig.open;
+      closeTime = dayConfig.close;
+      // Inclui os campos de intervalo, se configurados
+      breakStartTime = dayConfig.breakStart;
+      breakEndTime = dayConfig.breakEnd;
+    }
+  } else {
+    // Se "Qualquer Barbeiro", a lógica pode vir de uma união de configurações individuais,
+    // mas para o caso de confirmar o agendamento, verifique um dos modos ou defina a partir do global.
+    // Por simplicidade, usaremos a configuração global do dia.
+    const globalConfig = effectiveOperatingHours[getDayName(selectedDate)];
+    if (globalConfig && globalConfig.active && globalConfig.open && globalConfig.close) {
+      openTime = globalConfig.open;
+      closeTime = globalConfig.close;
+      breakStartTime = globalConfig.breakStart;
+      breakEndTime = globalConfig.breakEnd;
+    }
+  }
+}
+if (!openTime || !closeTime) {
+  setFeedback("Horários não configurados para o dia selecionado.");
+  return;
+}
+// Agora a chamada passa os 5 argumentos:
+const dynamicSlots = generateSlots(openTime, breakStartTime, breakEndTime, closeTime, 30);
     const slotsNeeded = Math.ceil(selectedService.duration / 30);
     const index = dynamicSlots.indexOf(selectedTimeSlot);
     if (index === -1 || index + slotsNeeded > dynamicSlots.length) {
@@ -542,7 +570,13 @@ const Agendamento: React.FC = () => {
           exceptions
         );
         if (!effectiveConfig) continue;
-        const fullSlots = generateSlots(effectiveConfig.open!, effectiveConfig.close!, 30);
+        const fullSlots = generateSlots(
+  effectiveConfig.open!,
+  effectiveConfig.breakStart,
+  effectiveConfig.breakEnd,
+  effectiveConfig.close!,
+  30
+);
         const startIndex = fullSlots.indexOf(selectedTimeSlot);
         if (startIndex === -1 || startIndex + slotsNeeded > fullSlots.length) continue;
         const requiredForBarber = fullSlots.slice(startIndex, startIndex + slotsNeeded);
