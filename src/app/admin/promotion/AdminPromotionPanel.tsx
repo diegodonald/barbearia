@@ -128,31 +128,30 @@ const AdminPromotionPanel: React.FC = () => {
       const userDocRef = doc(db, "usuarios", userId);
       if (newRole === "barber") {
         const docSnap = await getDoc(userDocRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (!data.horarios) {
-            // Usa os dados atuais da Agenda Global (aplicando o helper que achata a estrutura)
-            const globalConfig = getGlobalHorarios();
-            await setDoc(
-              userDocRef,
-              {
-                horarios: globalConfig,
-                exceptions: [],
-              },
-              { merge: true }
-            );
-            alert("Usuário promovido a Barbeiro com agenda herdada da Agenda Global.");
-          } else {
-            alert("Usuário promovido a Barbeiro com agenda já configurada.");
-          }
+        const userData = docSnap.exists() ? docSnap.data() : {};
+        // Remover a chave "horarios" do objeto antigo, se existir, para evitar duplicação
+        if (userData.horarios) {
+          delete userData.horarios;
         }
-      } else {
-        alert(
-          `Usuário atualizado para ${
-            newRole === "admin" ? "Admin" : "Cliente"
-          } com sucesso!`
+        // Use a agenda global atualizada – preservando a estrutura sob a chave "horarios"
+        const globalConfig =
+          operatingHours && operatingHours.horarios
+            ? operatingHours.horarios
+            : fallbackConfig.horarios;
+        await setDoc(
+          userDocRef,
+          {
+            ...userData, // preserva os outros campos do documento (ex: nome, email)
+            horarios: globalConfig, // sobrescreve completamente o campo "horarios"
+            exceptions: []
+          },
+          { merge: false }
         );
+        alert("Usuário promovido a Barbeiro com agenda herdada da Agenda Global.");
+      } else {
+        alert(`Usuário atualizado para ${newRole === "admin" ? "Admin" : "Cliente"} com sucesso!`);
       }
+      await updateDoc(userDocRef, { role: newRole });
       await updateDoc(userDocRef, { role: newRole });
     } catch (error) {
       console.error("Erro ao atualizar role do usuário:", error);

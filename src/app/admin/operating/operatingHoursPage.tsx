@@ -17,7 +17,7 @@ import {
 import { db } from "@/lib/firebase";
 import "react-datepicker/dist/react-datepicker.css";
 
-// Define a interface para um dia da semana
+// Atualizada para incluir os campos de intervalo
 interface DayConfig {
   open?: string;
   breakStart?: string;
@@ -26,9 +26,9 @@ interface DayConfig {
   active: boolean;
 }
 
-// Interface para as configurações globais de horários
+// A estrutura adotada no Firestore utiliza o campo "horarios" já no nível de documento
 export type OperatingHours = {
-  diasSemana: {
+  horarios: {
     segunda: DayConfig;
     terça: DayConfig;
     quarta: DayConfig;
@@ -70,11 +70,12 @@ export default function OperatingHoursPage() {
     const docRef = doc(db, "configuracoes", "operatingHours");
     getDoc(docRef).then((docSnap) => {
       if (docSnap.exists()) {
+        // A configuração já vem estruturada com o campo "horarios"
         setOperatingHours(docSnap.data() as OperatingHours);
       } else {
-        // Cria configuração padrão caso não exista
+        // Cria configuração padrão caso não exista, seguindo a estrutura "horarios"
         const defaultConfig: OperatingHours = {
-          diasSemana: {
+          horarios: {
             segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
             terça:   { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
             quarta:  { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
@@ -152,9 +153,9 @@ export default function OperatingHoursPage() {
     );
   }
 
-  // Função para renderizar o formulário de cada dia
-  const renderDayForm = (dayName: keyof OperatingHours["diasSemana"]) => {
-    const dayConfig = operatingHours.diasSemana[dayName];
+  // Função para renderizar o formulário de cada dia com os 4 campos (abertura, início intervalo, término intervalo e fechamento)
+  const renderDayForm = (dayName: keyof OperatingHours["horarios"]) => {
+    const dayConfig = operatingHours.horarios[dayName];
     return (
       <div key={dayName} className="mb-4 p-4 border rounded bg-gray-800">
         <h3 className="text-lg capitalize mb-2">{dayName}</h3>
@@ -166,8 +167,8 @@ export default function OperatingHoursPage() {
             onChange={(e) =>
               setOperatingHours({
                 ...operatingHours,
-                diasSemana: {
-                  ...operatingHours.diasSemana,
+                horarios: {
+                  ...operatingHours.horarios,
                   [dayName]: { ...dayConfig, active: e.target.checked },
                 },
               })
@@ -175,77 +176,77 @@ export default function OperatingHoursPage() {
           />
         </div>
         {dayConfig.active && (
-  <div className="flex flex-wrap gap-4">
-    <div>
-      <label className="block">Horário de Abertura:</label>
-      <input
-        type="time"
-        value={dayConfig.open || ""}
-        onChange={(e) =>
-          setOperatingHours({
-            ...operatingHours,
-            diasSemana: {
-              ...operatingHours.diasSemana,
-              [dayName]: { ...dayConfig, open: e.target.value },
-            },
-          })
-        }
-        className="px-2 py-1 bg-gray-700 text-white rounded"
-      />
-    </div>
-    <div>
-      <label className="block">Início do Intervalo:</label>
-      <input
-        type="time"
-        value={dayConfig.breakStart || ""}
-        onChange={(e) =>
-          setOperatingHours({
-            ...operatingHours,
-            diasSemana: {
-              ...operatingHours.diasSemana,
-              [dayName]: { ...dayConfig, breakStart: e.target.value },
-            },
-          })
-        }
-        className="px-2 py-1 bg-gray-700 text-white rounded"
-      />
-    </div>
-    <div>
-      <label className="block">Término do Intervalo:</label>
-      <input
-        type="time"
-        value={dayConfig.breakEnd || ""}
-        onChange={(e) =>
-          setOperatingHours({
-            ...operatingHours,
-            diasSemana: {
-              ...operatingHours.diasSemana,
-              [dayName]: { ...dayConfig, breakEnd: e.target.value },
-            },
-          })
-        }
-        className="px-2 py-1 bg-gray-700 text-white rounded"
-      />
-    </div>
-    <div>
-      <label className="block">Horário de Fechamento:</label>
-      <input
-        type="time"
-        value={dayConfig.close || ""}
-        onChange={(e) =>
-          setOperatingHours({
-            ...operatingHours,
-            diasSemana: {
-              ...operatingHours.diasSemana,
-              [dayName]: { ...dayConfig, close: e.target.value },
-            },
-          })
-        }
-        className="px-2 py-1 bg-gray-700 text-white rounded"
-      />
-    </div>
-  </div>
-)}
+          <div className="flex flex-wrap gap-4">
+            <div>
+              <label className="block">Horário de Abertura:</label>
+              <input
+                type="time"
+                value={dayConfig.open || ""}
+                onChange={(e) =>
+                  setOperatingHours({
+                    ...operatingHours,
+                    horarios: {
+                      ...operatingHours.horarios,
+                      [dayName]: { ...dayConfig, open: e.target.value },
+                    },
+                  })
+                }
+                className="px-2 py-1 bg-gray-700 text-white rounded"
+              />
+            </div>
+            <div>
+              <label className="block">Início do Intervalo:</label>
+              <input
+                type="time"
+                value={dayConfig.breakStart || ""}
+                onChange={(e) =>
+                  setOperatingHours({
+                    ...operatingHours,
+                    horarios: {
+                      ...operatingHours.horarios,
+                      [dayName]: { ...dayConfig, breakStart: e.target.value },
+                    },
+                  })
+                }
+                className="px-2 py-1 bg-gray-700 text-white rounded"
+              />
+            </div>
+            <div>
+              <label className="block">Término do Intervalo:</label>
+              <input
+                type="time"
+                value={dayConfig.breakEnd || ""}
+                onChange={(e) =>
+                  setOperatingHours({
+                    ...operatingHours,
+                    horarios: {
+                      ...operatingHours.horarios,
+                      [dayName]: { ...dayConfig, breakEnd: e.target.value },
+                    },
+                  })
+                }
+                className="px-2 py-1 bg-gray-700 text-white rounded"
+              />
+            </div>
+            <div>
+              <label className="block">Horário de Fechamento:</label>
+              <input
+                type="time"
+                value={dayConfig.close || ""}
+                onChange={(e) =>
+                  setOperatingHours({
+                    ...operatingHours,
+                    horarios: {
+                      ...operatingHours.horarios,
+                      [dayName]: { ...dayConfig, close: e.target.value },
+                    },
+                  })
+                }
+                className="px-2 py-1 bg-gray-700 text-white rounded"
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -270,7 +271,7 @@ export default function OperatingHoursPage() {
           <h2 className="text-2xl font-semibold mb-4">
             Horários Globais de Funcionamento
           </h2>
-          {(Object.keys(operatingHours.diasSemana) as (keyof OperatingHours["diasSemana"])[]).map(
+          {(Object.keys(operatingHours.horarios) as (keyof OperatingHours["horarios"])[]).map(
             (day) => renderDayForm(day)
           )}
           <button
@@ -317,9 +318,9 @@ export default function OperatingHoursPage() {
               </select>
             </div>
             {newException.status === "available" && (
-              <div className="flex gap-4 items-center mb-2">
+              <div className="flex flex-wrap gap-4 items-center mb-2">
                 <div>
-                  <label className="block">Horário de Abertura:</label>
+                  <label className="block">Abertura:</label>
                   <input
                     type="time"
                     value={newException.open || ""}
@@ -330,7 +331,7 @@ export default function OperatingHoursPage() {
                   />
                 </div>
                 <div>
-                  <label className="block">Horário de Fechamento:</label>
+                  <label className="block">Fechamento:</label>
                   <input
                     type="time"
                     value={newException.close || ""}
@@ -362,7 +363,7 @@ export default function OperatingHoursPage() {
           </div>
 
           {/* Listagem das Exceções Existentes */}
-          <div>
+          <section>
             <h3 className="text-xl font-semibold mb-2">
               Exceções Existentes:
             </h3>
@@ -392,7 +393,7 @@ export default function OperatingHoursPage() {
                 ))}
               </ul>
             )}
-          </div>
+          </section>
         </section>
       </main>
       <Footer />
