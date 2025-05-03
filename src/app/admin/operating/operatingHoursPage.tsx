@@ -4,7 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import { doc, getDoc, setDoc, updateDoc, collection, onSnapshot, addDoc, deleteDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  collection,
+  onSnapshot,
+  addDoc,
+  deleteDoc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import "react-datepicker/dist/react-datepicker.css";
 
@@ -28,14 +37,14 @@ export type OperatingHours = {
   };
 };
 
-// Atualize a interface de exceção para incluir, se necessário, os horários (caso a exceção libere um dia inativo)
+// Interface para Exceções
 interface Exception {
   id?: string;
-  date: string;    // Formato "YYYY-MM-DD"
+  date: string; // Formato "YYYY-MM-DD"
   status: "blocked" | "available";
   message?: string;
-  open?: string;   // Horário de abertura para exceção (opcional)
-  close?: string;  // Horário de fechamento para exceção (opcional)
+  open?: string;
+  close?: string;
 }
 
 export default function OperatingHoursPage() {
@@ -45,7 +54,7 @@ export default function OperatingHoursPage() {
 
   // Estado para as exceções
   const [exceptions, setExceptions] = useState<Exception[]>([]);
-  // Estado para nova exceção (para criação)
+  // Estado para nova exceção
   const [newException, setNewException] = useState<Exception>({
     date: "",
     status: "blocked",
@@ -82,7 +91,10 @@ export default function OperatingHoursPage() {
     // Listener para as exceções (subcoleção)
     const exceptionsRef = collection(db, "configuracoes", "operatingHours", "exceptions");
     const unsubscribe = onSnapshot(exceptionsRef, (snapshot) => {
-      const exList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } )) as Exception[];
+      const exList = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Exception[];
       setExceptions(exList);
     });
     return () => unsubscribe();
@@ -219,7 +231,9 @@ export default function OperatingHoursPage() {
 
         {/* Seção de Horários Globais */}
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Horários Globais de Funcionamento</h2>
+          <h2 className="text-2xl font-semibold mb-4">
+            Horários Globais de Funcionamento
+          </h2>
           {(Object.keys(operatingHours.diasSemana) as (keyof OperatingHours["diasSemana"])[]).map(
             (day) => renderDayForm(day)
           )}
@@ -233,8 +247,12 @@ export default function OperatingHoursPage() {
 
         {/* Seção de Exceções */}
         <section className="mt-12">
-          <h2 className="text-2xl font-semibold mb-4">Exceções (Datas Específicas)</h2>
-          <div className="mb-4">
+          <h2 className="text-2xl font-semibold mb-4">
+            Exceções (Datas Específicas)
+          </h2>
+
+          {/* Formulário para Adicionar Exceção */}
+          <div className="mb-4 p-4 border rounded bg-gray-800">
             <div className="flex gap-4 items-center mb-2">
               <label className="mr-2">Data da Exceção:</label>
               <input
@@ -251,7 +269,10 @@ export default function OperatingHoursPage() {
               <select
                 value={newException.status}
                 onChange={(e) =>
-                  setNewException({ ...newException, status: e.target.value as "blocked" | "available" })
+                  setNewException({
+                    ...newException,
+                    status: e.target.value as "blocked" | "available",
+                  })
                 }
                 className="px-2 py-1 text-black rounded"
               >
@@ -303,14 +324,21 @@ export default function OperatingHoursPage() {
               Adicionar Exceção
             </button>
           </div>
+
+          {/* Listagem das Exceções Existentes */}
           <div>
-            <h3 className="text-xl font-semibold mb-2">Exceções Existentes:</h3>
+            <h3 className="text-xl font-semibold mb-2">
+              Exceções Existentes:
+            </h3>
             {exceptions.length === 0 ? (
               <p>Nenhuma exceção cadastrada.</p>
             ) : (
-              <ul>
+              <ul className="space-y-2">
                 {exceptions.map((ex) => (
-                  <li key={ex.id} className="mb-2 flex justify-between items-center bg-gray-800 p-2 rounded">
+                  <li
+                    key={ex.id}
+                    className="flex justify-between items-center bg-gray-700 p-2 rounded"
+                  >
                     <span>
                       {ex.date} — {ex.status}{" "}
                       {ex.status === "available" && ex.open && ex.close
