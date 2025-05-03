@@ -10,6 +10,8 @@ import "react-datepicker/dist/react-datepicker.css";
 // Interfaces para a configuração individual do barbeiro
 interface DayConfig {
   open?: string;
+  breakStart?: string;
+  breakEnd?: string;
   close?: string;
   active: boolean;
 }
@@ -95,12 +97,12 @@ const BarbeirosConfig: React.FC = () => {
             // Se não existir configuração, cria a configuração padrão
             const defaultConfig: BarberConfig = {
               horarios: {
-                segunda: { open: "08:00", close: "18:00", active: true },
-                terça: { open: "08:00", close: "18:00", active: true },
-                quarta: { open: "08:00", close: "18:00", active: true },
-                quinta: { open: "08:00", close: "18:00", active: true },
-                sexta: { open: "08:00", close: "18:00", active: true },
-                sábado: { open: "09:00", close: "14:00", active: true },
+                segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+                terça:   { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+                quarta:  { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+                quinta:  { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+                sexta:   { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+                sábado:  { open: "09:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
                 domingo: { active: false },
               },
               exceptions: [],
@@ -183,43 +185,77 @@ const BarbeirosConfig: React.FC = () => {
           />
         </div>
         {config.active && (
-          <div className="flex gap-4">
-            <div>
-              <label className="block">Horário de Abertura:</label>
-              <input
-                type="time"
-                value={config.open || ""}
-                onChange={(e) =>
-                  setBarberConfig({
-                    ...barberConfig,
-                    horarios: {
-                      ...barberConfig.horarios,
-                      [day]: { ...config, open: e.target.value },
-                    },
-                  })
-                }
-                className="px-2 py-1 bg-gray-700 text-white rounded"
-              />
-            </div>
-            <div>
-              <label className="block">Horário de Fechamento:</label>
-              <input
-                type="time"
-                value={config.close || ""}
-                onChange={(e) =>
-                  setBarberConfig({
-                    ...barberConfig,
-                    horarios: {
-                      ...barberConfig.horarios,
-                      [day]: { ...config, close: e.target.value },
-                    },
-                  })
-                }
-                className="px-2 py-1 bg-gray-700 text-white rounded"
-              />
-            </div>
-          </div>
-        )}
+  <div className="flex flex-wrap gap-4">
+    <div>
+      <label className="block">Horário de Abertura:</label>
+      <input
+        type="time"
+        value={config.open || ""}
+        onChange={(e) =>
+          setBarberConfig({
+            ...barberConfig,
+            horarios: {
+              ...barberConfig.horarios,
+              [day]: { ...config, open: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+    <div>
+      <label className="block">Início do Intervalo:</label>
+      <input
+        type="time"
+        value={config.breakStart || ""}
+        onChange={(e) =>
+          setBarberConfig({
+            ...barberConfig,
+            horarios: {
+              ...barberConfig.horarios,
+              [day]: { ...config, breakStart: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+    <div>
+      <label className="block">Término do Intervalo:</label>
+      <input
+        type="time"
+        value={config.breakEnd || ""}
+        onChange={(e) =>
+          setBarberConfig({
+            ...barberConfig,
+            horarios: {
+              ...barberConfig.horarios,
+              [day]: { ...config, breakEnd: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+    <div>
+      <label className="block">Horário de Fechamento:</label>
+      <input
+        type="time"
+        value={config.close || ""}
+        onChange={(e) =>
+          setBarberConfig({
+            ...barberConfig,
+            horarios: {
+              ...barberConfig.horarios,
+              [day]: { ...config, close: e.target.value },
+            },
+          })
+        }
+        className="px-2 py-1 bg-gray-700 text-white rounded"
+      />
+    </div>
+  </div>
+)}
       </div>
     );
   };
