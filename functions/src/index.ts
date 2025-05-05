@@ -1,59 +1,44 @@
-import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
+import * as functions from 'firebase-functions/v1';
+import * as admin from 'firebase-admin';
+// Remova ou comente esta linha:
+// import * as cors from 'cors';
 
 admin.initializeApp();
 
-interface UpdateUserRoleData {
-  uid: string;
-  role: string;
-}
+// Remova ou comente este bloco:
+// const corsOptions = {
+//   origin: true, // Permite qualquer origem
+//   methods: ['GET', 'POST'],
+//   allowedHeaders: ['Content-Type', 'Authorization'],
+//   credentials: true
+// };
 
-/**
- * Função callable para atualizar o custom claim "role" do usuário.
- * Adaptada para a nova assinatura do onCall (Firebase Functions V2).
- */
-export const updateUserRole = functions.https.onCall(
-  async (request): Promise<{ message: string }> => {
-    // Converte os dados enviados para o tipo UpdateUserRoleData
-    const data = request.data as UpdateUserRoleData;
-
-    // Verifica se o usuário que chamou a função está autenticado
-    if (!request.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "A autenticação é necessária."
-      );
-    }
-
-    // Verifica se o usuário autenticado possui o custom claim "admin"
-    if (!request.auth.token.admin) {
-      throw new functions.https.HttpsError(
-        "permission-denied",
-        "Apenas administradores podem alterar papéis."
-      );
-    }
-
-    const { uid, role } = data;
-
-    // Valida os dados enviados
-    if (!uid || !role) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Os campos 'uid' e 'role' são obrigatórios."
-      );
-    }
-
+// Função para excluir usuário
+export const deleteUserAuth = functions
+  .runWith({ enforceAppCheck: false }) // Desabilitar AppCheck para desenvolvimento
+  .https.onCall(async (data, context) => {
     try {
-      await admin.auth().setCustomUserClaims(uid, { role });
-      return {
-        message: `Custom claims atualizados para o usuário ${uid} com role: ${role}`,
-      };
-    } catch (error: unknown) {
-      console.error("Erro ao atualizar os custom claims:", error);
+      const uid = data.uid;
+      
+      if (!uid) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'O UID do usuário é obrigatório'
+        );
+      }
+      
+      // Excluir o usuário da autenticação
+      console.log(`Tentando excluir usuário com UID: ${uid}`);
+      await admin.auth().deleteUser(uid);
+      console.log(`Usuário ${uid} excluído com sucesso da autenticação`);
+      
+      return { success: true, message: `Usuário ${uid} excluído com sucesso` };
+    } catch (error) {
+      console.error('Erro ao excluir usuário:', error);
       throw new functions.https.HttpsError(
-        "unknown",
-        "Ocorreu um erro ao atualizar os custom claims."
+        'internal',
+        'Ocorreu um erro ao excluir o usuário',
+        error
       );
     }
-  }
-);
+  });
