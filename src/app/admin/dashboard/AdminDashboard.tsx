@@ -1,20 +1,85 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
+import useAuth from "@/hooks/useAuth";
+import { ExtendedUser } from "@/types/ExtendedUser";
+import { useRouter } from "next/navigation";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 import {
   collection,
   query,
+  where,
   onSnapshot,
+  getDocs,
+  doc,
   updateDoc,
   deleteDoc,
-  doc,
-  getDocs,
-  where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import useAuth from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
-import { ExtendedUser } from "@/hooks/useAuth";
+import { useOperatingHours } from "@/hooks/useOperatingHours";
+import { OperatingHours } from "@/app/agendamento/page";
+
+// Reutilizando funções de utilidade do agendamento
+function getLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = ("0" + (date.getMonth() + 1)).slice(-2);
+  const day = ("0" + date.getDate()).slice(-2);
+  return `${year}-${month}-${day}`;
+}
+
+function getDayName(date: Date): keyof OperatingHours {
+  const days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  return days[date.getDay()] as keyof OperatingHours;
+}
+
+function generateSlots(
+  open: string,
+  breakStart: string | undefined,
+  breakEnd: string | undefined,
+  end: string,
+  interval: number
+): string[] {
+  const [openHour, openMinute] = open.split(":").map(Number);
+  const startTotal = openHour * 60 + openMinute;
+  const [endHour, endMinute] = end.split(":").map(Number);
+  const endTotal = endHour * 60 + endMinute;
+
+  let breakStartTotal = -1, breakEndTotal = -1;
+  if (breakStart && breakEnd) {
+    const [bsHour, bsMinute] = breakStart.split(":").map(Number);
+    breakStartTotal = bsHour * 60 + bsMinute;
+    const [beHour, beMinute] = breakEnd.split(":").map(Number);
+    breakEndTotal = beHour * 60 + beMinute;
+  }
+  
+  const slots: string[] = [];
+  for (let time = startTotal; time < endTotal - interval + 1; time += interval) {
+    if (breakStartTotal >= 0 && breakEndTotal > 0) {
+      const slotEnd = time + interval;
+      if (
+        (time >= breakStartTotal && time < breakEndTotal) ||
+        (slotEnd > breakStartTotal && slotEnd <= breakEndTotal) ||
+        (time < breakStartTotal && slotEnd > breakEndTotal)
+      ) {
+        continue;
+      }
+    }
+    
+    const hour = Math.floor(time / 60);
+    const minute = time % 60;
+    slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
+  }
+  
+  return slots;
+}
+
+function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite: string[] } {
+  const manha = slots.filter((slot) => slot < "12:00");
+  const tarde = slots.filter((slot) => slot >= "12:00" && slot < "17:00");
+  const noite = slots.filter((slot) => slot >= "17:00");
+  return { manha, tarde, noite };
+}
 
 // Atualizamos a interface para incluir o campo timeSlots (opcional)
 interface Appointment {
@@ -22,11 +87,25 @@ interface Appointment {
   dateStr: string;
   timeSlot?: string;
   timeSlots?: string[];
+  duration?: number;
   service: string;
   barber: string;
   barberId: string;
   name: string; // Nome do cliente ou do usuário que fez o agendamento
   status: string; // "confirmado", "pendente", "cancelado", etc.
+}
+
+interface BarberWithSchedule {
+  id: string;
+  name: string;
+  horarios?: OperatingHours | null;
+  exceptions?: any[];
+}
+
+interface ServiceOption {
+  name: string;
+  duration: number;
+  value: number;
 }
 
 const formatDate = (dateStr: string): string => {
@@ -43,6 +122,7 @@ interface BarberOption {
 const AdminDashboard: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const { operatingHours, exceptions } = useOperatingHours();
 
   // Estados para agendamentos
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -54,10 +134,23 @@ const AdminDashboard: React.FC = () => {
 
   // Estado para controle da edição inline
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [editingDate, setEditingDate] = useState<Date | null>(null);
+  const [editingTimeSlot, setEditingTimeSlot] = useState<string>("");
+  const [editingService, setEditingService] = useState<string>("");
+  const [editingBarber, setEditingBarber] = useState<BarberOption | null>(null);
+  const [editFeedback, setEditFeedback] = useState<string>("");
+  const [availableSlots, setAvailableSlots] = useState<{
+    manha: string[];
+    tarde: string[];
+    noite: string[];
+  }>({ manha: [], tarde: [], noite: [] });
 
   // Estados para opções dos dropdowns (Serviços e Barbeiros)
-  const [serviceOptions, setServiceOptions] = useState<string[]>([]);
-  const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
+  const [barberOptions, setBarberOptions] = useState<BarberWithSchedule[]>([]);
+  
+  // Mapeia cada barberId para os slots já reservados
+  const [bookedSlotsByBarber, setBookedSlotsByBarber] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     if (!loading && user) {
@@ -80,6 +173,8 @@ const AdminDashboard: React.FC = () => {
           id: docSnap.id,
           dateStr: data.dateStr,
           timeSlot: time,
+          timeSlots: data.timeSlots || (data.timeSlot ? [data.timeSlot] : []),
+          duration: data.duration || 30,
           service: data.service,
           barber: data.barber,
           barberId: data.barberId || "",
@@ -99,7 +194,14 @@ const AdminDashboard: React.FC = () => {
       try {
         const q = query(collection(db, "servicos"));
         const snapshot = await getDocs(q);
-        const services = snapshot.docs.map((doc) => doc.data().name) as string[];
+        const services = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            name: data.name,
+            duration: Number(data.duration),
+            value: Number(data.value),
+          };
+        });
         setServiceOptions(services);
       } catch (error) {
         console.error("Erro ao buscar serviços:", error);
@@ -114,10 +216,15 @@ const AdminDashboard: React.FC = () => {
       try {
         const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
         const snapshot = await getDocs(q);
-        const barbers = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: doc.data().name,
-        })) as BarberOption[];
+        const barbers = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name,
+            horarios: data.horarios || null,
+            exceptions: data.exceptions || []
+          };
+        });
         setBarberOptions(barbers);
       } catch (error) {
         console.error("Erro ao buscar barbeiros:", error);
@@ -125,6 +232,124 @@ const AdminDashboard: React.FC = () => {
     };
     fetchBarberOptions();
   }, []);
+
+  // Atualiza os agendamentos da data em edição
+  useEffect(() => {
+    if (!editingDate) return;
+    const normalizedDateStr = getLocalDateString(editingDate);
+    
+    // Excluir o próprio agendamento em edição dos ocupados
+    const currentAppointmentId = editingAppointment?.id;
+    
+    const q = query(
+      collection(db, "agendamentos"),
+      where("dateStr", "==", normalizedDateStr)
+    );
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const map: Record<string, string[]> = {};
+      querySnapshot.forEach((docSnap) => {
+        // Ignorar o agendamento atual sendo editado
+        if (docSnap.id === currentAppointmentId) return;
+        
+        const data = docSnap.data();
+        const bId = data.barberId;
+        let slots: string[] = [];
+        if (data.timeSlots) {
+          slots = data.timeSlots;
+        } else if (data.timeSlot) {
+          slots = [data.timeSlot];
+        }
+        if (map[bId]) {
+          map[bId] = Array.from(new Set([...map[bId], ...slots]));
+        } else {
+          map[bId] = slots;
+        }
+      });
+      setBookedSlotsByBarber(map);
+    });
+    
+    return () => unsubscribe();
+  }, [editingDate, editingAppointment?.id]);
+
+  // Calcula os slots disponíveis quando mudam a data ou o barbeiro
+  useEffect(() => {
+    if (!editingDate || !editingBarber) {
+      setAvailableSlots({ manha: [], tarde: [], noite: [] });
+      return;
+    }
+
+    // Encontra o barbeiro selecionado completo com horários
+    const selectedBarber = barberOptions.find(b => b.id === editingBarber.id);
+    if (!selectedBarber) {
+      setEditFeedback("Barbeiro não encontrado");
+      setAvailableSlots({ manha: [], tarde: [], noite: [] });
+      return;
+    }
+
+    // Determina o dia da semana
+    const dayName = getDayName(editingDate);
+    const dateStr = getLocalDateString(editingDate);
+
+    // Verifica exceções
+    const barberExceptions = selectedBarber.exceptions || [];
+    const exception = barberExceptions.find((ex: any) => ex.date === dateStr);
+    
+    if (exception) {
+      if (exception.status === "blocked") {
+        setEditFeedback("Este dia está bloqueado para o barbeiro");
+        setAvailableSlots({ manha: [], tarde: [], noite: [] });
+        return;
+      }
+    }
+
+    // Obtém a configuração de horário
+    let dayConfig;
+    
+    if (exception?.status === "available" && exception.open && exception.close) {
+      dayConfig = {
+        open: exception.open,
+        close: exception.close,
+        active: true
+      };
+    } else {
+      // Verificar configuração individual do barbeiro
+      if (selectedBarber.horarios && selectedBarber.horarios[dayName]) {
+        dayConfig = selectedBarber.horarios[dayName];
+      } else {
+        // Usa configuração global
+        dayConfig = operatingHours?.[dayName] || null;
+      }
+    }
+
+    if (!dayConfig || !dayConfig.active || !dayConfig.open || !dayConfig.close) {
+      setEditFeedback("Não há configuração de horário para este dia");
+      setAvailableSlots({ manha: [], tarde: [], noite: [] });
+      return;
+    }
+
+    // Gera todos os slots possíveis
+    const allSlots = generateSlots(
+      dayConfig.open,
+      dayConfig.breakStart,
+      dayConfig.breakEnd,
+      dayConfig.close,
+      30
+    );
+
+    // Remove os slots já ocupados
+    const bookedSlots = bookedSlotsByBarber[selectedBarber.id] || [];
+    const availableTimeSlots = allSlots.filter(slot => !bookedSlots.includes(slot));
+
+    if (availableTimeSlots.length === 0) {
+      setEditFeedback("Não há horários disponíveis para esta data");
+      setAvailableSlots({ manha: [], tarde: [], noite: [] });
+      return;
+    }
+
+    setAvailableSlots(groupSlots(availableTimeSlots));
+    setEditFeedback("");
+  }, [editingDate, editingBarber, bookedSlotsByBarber, barberOptions, operatingHours]);
 
   const setTodayFilter = () => {
     const today = new Date();
@@ -158,30 +383,101 @@ const AdminDashboard: React.FC = () => {
 
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
+    
+    // Inicializa os estados de edição
+    const [year, month, day] = appt.dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    setEditingDate(date);
+    
+    setEditingTimeSlot(appt.timeSlots?.[0] || "");
+    setEditingService(appt.service);
+    
+    // Encontra o barbeiro correspondente
+    const barber = barberOptions.find(b => b.id === appt.barberId);
+    setEditingBarber(barber || null);
   };
 
   const handleCancelEdit = () => {
     setEditingAppointment(null);
+    setEditingDate(null);
+    setEditingTimeSlot("");
+    setEditingService("");
+    setEditingBarber(null);
+    setEditFeedback("");
   };
 
   const handleSaveEdit = async () => {
-    if (!editingAppointment) return;
+    if (!editingAppointment || !editingDate || !editingTimeSlot || !editingService || !editingBarber) {
+      setEditFeedback("Preencha todos os campos");
+      return;
+    }
+
     try {
+      // Encontrar o serviço selecionado para obter a duração
+      const service = serviceOptions.find(s => s.name === editingService);
+      if (!service) {
+        setEditFeedback("Serviço não encontrado");
+        return;
+      }
+
+      // Calcular os slots necessários baseados na duração
+      const slotsNeeded = Math.ceil(service.duration / 30);
+      
+      // Verificar se há slots suficientes disponíveis após o horário inicial
+      const allSlots = [
+        ...availableSlots.manha,
+        ...availableSlots.tarde,
+        ...availableSlots.noite
+      ].sort();
+      
+      const startIndex = allSlots.indexOf(editingTimeSlot);
+      if (startIndex === -1) {
+        setEditFeedback("Horário inicial não está disponível");
+        return;
+      }
+      
+      if (startIndex + slotsNeeded > allSlots.length) {
+        setEditFeedback("Não há slots suficientes para completar este serviço");
+        return;
+      }
+      
+      // Verificar se os slots são consecutivos
+      const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
+      for (let i = 1; i < requiredSlots.length; i++) {
+        const prevSlot = requiredSlots[i-1];
+        const currSlot = requiredSlots[i];
+        
+        const [prevHour, prevMin] = prevSlot.split(":").map(Number);
+        const [currHour, currMin] = currSlot.split(":").map(Number);
+        
+        const prevTotalMins = prevHour * 60 + prevMin;
+        const currTotalMins = currHour * 60 + currMin;
+        
+        if (currTotalMins - prevTotalMins !== 30) {
+          setEditFeedback("Os horários não são consecutivos (pode haver um intervalo entre eles)");
+          return;
+        }
+      }
+      
+      const dateStr = getLocalDateString(editingDate);
+      
       await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
-        dateStr: editingAppointment.dateStr,
-        timeSlot: editingAppointment.timeSlot,
-        service: editingAppointment.service,
-        barber: editingAppointment.barber,
-        barberId: editingAppointment.barberId,
+        dateStr: dateStr,
+        timeSlots: requiredSlots,
+        service: editingService,
+        duration: service.duration,
+        barber: editingBarber.name,
+        barberId: editingBarber.id,
         status: editingAppointment.status,
       });
-      setEditingAppointment(null);
+      
+      handleCancelEdit();
     } catch (error) {
       console.error("Erro ao atualizar agendamento:", error);
+      setEditFeedback("Erro ao salvar. Tente novamente.");
     }
   };
 
-  // Removemos a confirmação duplicada; a confirmação ocorre no onClick
   const handleCancelAppointment = async (appt: Appointment) => {
     try {
       await deleteDoc(doc(db, "agendamentos", appt.id));
@@ -246,163 +542,180 @@ const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Formulário de Edição */}
+      {editingAppointment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white text-black p-6 rounded-lg shadow-lg max-w-2xl w-full max-h-90vh overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Editar Agendamento</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-1">Cliente</label>
+                <input
+                  type="text"
+                  value={editingAppointment.name}
+                  readOnly
+                  className="px-3 py-2 bg-gray-200 w-full rounded"
+                />
+              </div>
+              
+              <div>
+                <label className="block mb-1">Data</label>
+                <DatePicker
+                  selected={editingDate}
+                  onChange={(date: Date | null) => {
+                    setEditingDate(date);
+                    setEditingTimeSlot("");
+                  }}
+                  dateFormat="dd/MM/yyyy"
+                  className="px-3 py-2 border w-full rounded"
+                />
+              </div>
+              
+              <div>
+                <label className="block mb-1">Serviço</label>
+                <select
+                  value={editingService}
+                  onChange={(e) => setEditingService(e.target.value)}
+                  className="px-3 py-2 bg-white border w-full rounded"
+                >
+                  {serviceOptions.map((service) => (
+                    <option key={service.name} value={service.name}>
+                      {service.name} ({service.duration} min)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block mb-1">Barbeiro</label>
+                <select
+                  value={editingBarber?.id || ""}
+                  onChange={(e) => {
+                    const selected = barberOptions.find(b => b.id === e.target.value);
+                    setEditingBarber(selected || null);
+                    setEditingTimeSlot("");
+                  }}
+                  className="px-3 py-2 bg-white border w-full rounded"
+                >
+                  <option value="">Selecione um barbeiro</option>
+                  {barberOptions.map((barber) => (
+                    <option key={barber.id} value={barber.id}>
+                      {barber.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {editingDate && editingBarber && (
+                <div>
+                  <label className="block mb-1">Horário</label>
+                  <div className="space-y-2">
+                    {Object.entries(availableSlots).map(([period, slots]) => {
+                      if (slots.length === 0) return null;
+                      
+                      return (
+                        <div key={period}>
+                          <h4 className="font-medium capitalize">
+                            {period === "manha" ? "manhã" : period === "tarde" ? "tarde" : "noite"}
+                          </h4>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {slots.map((slot) => (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => setEditingTimeSlot(slot)}
+                                className={`px-3 py-1 border rounded ${
+                                  editingTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {(availableSlots.manha.length === 0 && 
+                    availableSlots.tarde.length === 0 && 
+                    availableSlots.noite.length === 0) && (
+                    <p className="text-red-500 mt-2">Não há horários disponíveis para esta data e barbeiro</p>
+                  )}
+                </div>
+              )}
+              
+              {editFeedback && (
+                <div className="p-2 bg-red-100 text-red-700 rounded">
+                  {editFeedback}
+                </div>
+              )}
+              
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {filteredAppointments.length === 0 ? (
         <p>Nenhum agendamento encontrado.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full border border-gray-200">
             <thead>
-              <tr>
-                <th className="px-4 py-2 border">Data</th>
-                <th className="px-4 py-2 border">Horário</th>
-                <th className="px-4 py-2 border">Serviço</th>
-                <th className="px-4 py-2 border">Barbeiro</th>
-                <th className="px-4 py-2 border">Cliente</th>
-                <th className="px-4 py-2 border">Status</th>
-                <th className="px-4 py-2 border">Ações</th>
+              <tr className="bg-gray-100 text-gray-600 uppercase text-sm">
+                <th className="py-3 px-6 text-left">Data</th>
+                <th className="py-3 px-6 text-left">Horário</th>
+                <th className="py-3 px-6 text-left">Cliente</th>
+                <th className="py-3 px-6 text-left">Serviço</th>
+                <th className="py-3 px-6 text-left">Barbeiro</th>
+                <th className="py-3 px-6 text-left">Status</th>
+                <th className="py-3 px-6 text-left">Ações</th>
               </tr>
             </thead>
-            <tbody>
-              {filteredAppointments.map((app) =>
-                editingAppointment && editingAppointment.id === app.id ? (
-                  <tr key={app.id}>
-                    <td className="px-4 py-2 border">
-                      <input
-                        type="date"
-                        value={editingAppointment.dateStr}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            dateStr: e.target.value,
-                          })
+            <tbody className="text-gray-600 divide-y">
+              {filteredAppointments.map((appointment) => (
+                <tr key={appointment.id} className="hover:bg-gray-50">
+                  <td className="py-4 px-6">{formatDate(appointment.dateStr)}</td>
+                  <td className="py-4 px-6">{appointment.timeSlot}</td>
+                  <td className="py-4 px-6">{appointment.name}</td>
+                  <td className="py-4 px-6">{appointment.service}</td>
+                  <td className="py-4 px-6">{appointment.barber}</td>
+                  <td className="py-4 px-6">{appointment.status}</td>
+                  <td className="py-4 px-6 flex gap-2">
+                    <button
+                      onClick={() => handleStartEditing(appointment)}
+                      className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded text-xs"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
+                          handleCancelAppointment(appointment);
                         }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      />
-                    </td>
-                    <td className="px-4 py-2 border">
-                      <input
-                        type="time"
-                        value={editingAppointment.timeSlot || ""}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            timeSlot: e.target.value,
-                          })
-                        }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      />
-                    </td>
-                    <td className="px-4 py-2 border">
-                      <select
-                        value={editingAppointment.service}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            service: e.target.value,
-                          })
-                        }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      >
-                        {serviceOptions.map((s, idx) => (
-                          <option key={idx} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2 border">
-                      <select
-                        value={editingAppointment.barberId}
-                        onChange={(e) => {
-                          const selectedId = e.target.value;
-                          const selectedBarberOption = barberOptions.find(
-                            (b) => b.id === selectedId
-                          );
-                          if (selectedBarberOption) {
-                            setEditingAppointment({
-                              ...editingAppointment,
-                              barber: selectedBarberOption.name,
-                              barberId: selectedBarberOption.id,
-                            });
-                          }
-                        }}
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      >
-                        {barberOptions.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2 border">{app.name}</td>
-                    <td className="px-4 py-2 border">
-                      <select
-                        value={editingAppointment.status}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            status: e.target.value,
-                          })
-                        }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      >
-                        <option value="confirmado">Confirmado</option>
-                        <option value="pendente">Pendente</option>
-                        <option value="cancelado">Cancelado</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-2 border">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={handleSaveEdit}
-                          className="bg-green-500 px-3 py-1 rounded hover:bg-green-600 transition"
-                        >
-                          Salvar
-                        </button>
-                        <button
-                          onClick={() => setEditingAppointment(null)}
-                          className="bg-gray-500 px-3 py-1 rounded hover:bg-gray-600 transition"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={app.id}>
-                    <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
-                    <td className="px-4 py-2 border">
-                      {app.timeSlot ||
-                        (app.timeSlots ? app.timeSlots.join(" - ") : "")}
-                    </td>
-                    <td className="px-4 py-2 border">{app.service}</td>
-                    <td className="px-4 py-2 border">{app.barber}</td>
-                    <td className="px-4 py-2 border">{app.name}</td>
-                    <td className="px-4 py-2 border">{app.status}</td>
-                    <td className="px-4 py-2 border">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleStartEditing(app)}
-                          className="bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600 transition"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm("Deseja realmente cancelar este agendamento?")) {
-                              handleCancelAppointment(app);
-                            }
-                          }}
-                          className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
-                        >
-                          Cancelar Agendamento
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              )}
+                      }}
+                      className="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-xs"
+                    >
+                      Cancelar
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
