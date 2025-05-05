@@ -9,11 +9,13 @@ import {
   updateDoc,
   doc,
   setDoc,
-  getDoc
+  getDoc,
+  deleteDoc
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
+import { httpsCallable, getFunctions } from "firebase/functions";
 
 // Define uma interface para os dados do usuário
 interface User {
@@ -46,7 +48,7 @@ export interface BarberConfig {
 
 interface Exception {
   id?: string;
-  date: string; // formato "YYYY-MM-DD"
+  date: string;
   status: "blocked" | "available";
   message?: string;
   open?: string;
@@ -74,131 +76,138 @@ const AdminPromotionPanel: React.FC = () => {
   const { operatingHours } = useOperatingHours();
 
   // Helper: retorna a configuração global "achatada"
-  const getGlobalHorarios = (): any => {
-    if (operatingHours) {
-      // Se existir a chave "diasSemana", retorna seu valor; senão, retorna operatingHours diretamente
-      return operatingHours.diasSemana ? operatingHours.diasSemana : operatingHours;
-    }
-    return fallbackConfig.horarios;
+  const getGlobalHorarios = () => {
+    return operatingHours || fallbackConfig;
   };
 
   // Estado para armazenar a lista de usuários
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [error, setError] = useState("");
+  const [searchName, setSearchName] = useState("");
 
-  // Estado para filtro por nome
-  const [filterName, setFilterName] = useState("");
+  // Filtrar usuários pelo nome
+  const filteredUsers = users.filter(user => 
+    user.name.toLowerCase().includes(searchName.toLowerCase())
+  );
 
-  // Verificar se o usuário logado possui role "admin"
+  // Redirecionar se não for administrador
   useEffect(() => {
-    if (!loading && user) {
-      if (user.role !== "admin") {
-        router.push("/"); // Redireciona se não for admin
-      }
+    if (!loading && (!user || user.role !== "admin")) {
+      router.push("/");
     }
-  }, [loading, user, router]);
+  }, [user, loading, router]);
 
-  // Busca os usuários da coleção "usuarios" do Firestore
+  // Carregar lista de usuários
   useEffect(() => {
-    const q = query(collection(db, "usuarios"));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const usersData = snapshot.docs.map((doc) => ({
-          ...doc.data(),
-          id: doc.id,
-        })) as User[];
-        setUsers(usersData);
-        setLoadingUsers(false);
-      },
-      (error) => {
-        console.error("Erro ao buscar usuários:", error);
-        setError("Erro ao buscar usuários.");
-        setLoadingUsers(false);
-      }
-    );
-    return () => unsubscribe();
-  }, []);
+    if (user && user.role === "admin") {
+      const q = query(collection(db, "usuarios"));
+      const unsubscribe = onSnapshot(
+        q,
+        (querySnapshot) => {
+          const usersList: User[] = [];
+          querySnapshot.forEach((doc) => {
+            const userData = doc.data();
+            usersList.push({
+              id: doc.id,
+              name: userData.name || "Sem nome",
+              email: userData.email || "Sem email",
+              role: userData.role || "user",
+            });
+          });
+          setUsers(usersList);
+          setLoadingUsers(false);
+        },
+        (error) => {
+          console.error("Error fetching users:", error);
+          setError("Erro ao carregar usuários. Tente novamente mais tarde.");
+          setLoadingUsers(false);
+        }
+      );
 
-  // Função para alterar a role do usuário para o valor especificado.
-  // Ao promover para "barber", atualiza o documento para incluir a agenda individual com os dados ATUAIS da Agenda Global.
+      return () => unsubscribe();
+    }
+  }, [user]);
+
+  // Alterar papel/função do usuário
   const changeUserRole = async (userId: string, newRole: string) => {
     try {
-      const userDocRef = doc(db, "usuarios", userId);
+      setError("");
+      const userRef = doc(db, "usuarios", userId);
+      await updateDoc(userRef, {
+        role: newRole
+      });
+
+      // Se o usuário for promovido a barbeiro, inicializar a configuração de agenda
       if (newRole === "barber") {
-        const docSnap = await getDoc(userDocRef);
-        const userData = docSnap.exists() ? docSnap.data() : {};
-        // Remover a chave "horarios" do objeto antigo, se existir, para evitar duplicação
-        if (userData.horarios) {
-          delete userData.horarios;
+        const barberConfigRef = doc(db, "barbers", userId);
+        const barberConfigDoc = await getDoc(barberConfigRef);
+
+        if (!barberConfigDoc.exists()) {
+          // Usar a configuração global como padrão para novos barbeiros
+          const globalConfig = getGlobalHorarios();
+          await setDoc(barberConfigRef, globalConfig);
         }
-        // Use a agenda global atualizada – preservando a estrutura sob a chave "horarios"
-        const globalConfig =
-          operatingHours && operatingHours.horarios
-            ? operatingHours.horarios
-            : fallbackConfig.horarios;
-        await setDoc(
-          userDocRef,
-          {
-            ...userData, // preserva os outros campos do documento (ex: nome, email)
-            horarios: globalConfig, // sobrescreve completamente o campo "horarios"
-            exceptions: []
-          },
-          { merge: false }
-        );
-        alert("Usuário promovido a Barbeiro com agenda herdada da Agenda Global.");
-      } else {
-        alert(`Usuário atualizado para ${newRole === "admin" ? "Admin" : "Cliente"} com sucesso!`);
       }
-      await updateDoc(userDocRef, { role: newRole });
-      await updateDoc(userDocRef, { role: newRole });
     } catch (error) {
-      console.error("Erro ao atualizar role do usuário:", error);
-      setError("Erro ao atualizar role do usuário.");
+      console.error("Error updating user role:", error);
+      setError(`Erro ao atualizar papel do usuário: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     }
   };
 
-  if (loading || loadingUsers) {
-    return <p>Carregando...</p>;
-  }
+  // Função para excluir um usuário
+  const deleteUserAccount = async (userId: string, userName: string) => {
+    if (!window.confirm(`Tem certeza que deseja excluir permanentemente o usuário ${userName}? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+    
+    try {
+      setError("");
+      
+      // 1. Excluir documento do usuário no Firestore
+      const userDocRef = doc(db, "usuarios", userId);
+      await deleteDoc(userDocRef);
+      
+      // 2. Chamar função do Firebase para excluir o usuário da autenticação
+      const functions = getFunctions();
+      const deleteUserAuth = httpsCallable(functions, 'deleteUserAuth');
+      
+      // Adicione logs para ajudar no debugging
+      console.log("Chamando deleteUserAuth com UID:", userId);
+      
+      const result = await deleteUserAuth({ uid: userId });
+      console.log("Resultado da exclusão:", result.data);
+      
+      alert(`Usuário ${userName} foi excluído com sucesso.`);
+    } catch (error) {
+      console.error("Erro ao excluir usuário:", error);
+      setError(`Erro ao excluir usuário: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  };
 
-  // Aplica o filtro por nome
-  const filteredUsers = users.filter((u) => {
-    const matchName = filterName
-      ? u.name.toLowerCase().includes(filterName.toLowerCase())
-      : true;
-    return matchName;
-  });
+  if (loading || (user && user.role !== "admin")) {
+    return <div className="p-4">Carregando...</div>;
+  }
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">
-        Painel Administrativo – Gerenciamento de Usuários
-      </h1>
-      {error && <p className="text-red-500 mb-4">{error}</p>}
-
-      {/* Filtro por Nome */}
-      <div className="mb-4 flex flex-wrap gap-4 items-end">
-        <div>
-          <label className="block mb-1">Filtrar por Nome:</label>
-          <input
-            type="text"
-            placeholder="Digite o nome do usuário"
-            value={filterName}
-            onChange={(e) => setFilterName(e.target.value)}
-            className="px-3 py-2 bg-gray-200 text-black rounded"
-          />
-        </div>
-        <button
-          onClick={() => setFilterName("")}
-          className="bg-gray-500 px-3 py-2 rounded hover:bg-gray-600 transition"
-        >
-          Limpar Filtro de Nome
-        </button>
+      <h1 className="text-2xl font-bold mb-4">Gerenciar Usuários</h1>
+      
+      {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+      
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Buscar por nome..."
+          value={searchName}
+          onChange={(e) => setSearchName(e.target.value)}
+          className="px-4 py-2 border rounded w-full"
+        />
       </div>
 
-      {filteredUsers.length === 0 ? (
+      {loadingUsers ? (
+        <p>Carregando usuários...</p>
+      ) : filteredUsers.length === 0 ? (
         <p>Nenhum usuário encontrado.</p>
       ) : (
         <div className="overflow-x-auto">
@@ -230,7 +239,7 @@ const AdminPromotionPanel: React.FC = () => {
                               changeUserRole(u.id, "barber");
                             }
                           }}
-                          className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mr-2"
+                          className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mr-2 mb-2"
                         >
                           Promover a Barbeiro
                         </button>
@@ -242,9 +251,15 @@ const AdminPromotionPanel: React.FC = () => {
                               changeUserRole(u.id, "admin");
                             }
                           }}
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded mr-2 mb-2"
                         >
                           Promover a Admin
+                        </button>
+                        <button
+                          onClick={() => deleteUserAccount(u.id, u.name)}
+                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                        >
+                          Excluir Usuário
                         </button>
                       </>
                     ) : u.role === "barber" ? (
@@ -259,7 +274,7 @@ const AdminPromotionPanel: React.FC = () => {
                               changeUserRole(u.id, "user");
                             }
                           }}
-                          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded mr-2"
+                          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded mr-2 mb-2"
                         >
                           Rebaixar para Cliente
                         </button>
@@ -273,9 +288,15 @@ const AdminPromotionPanel: React.FC = () => {
                               changeUserRole(u.id, "admin");
                             }
                           }}
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded mr-2 mb-2"
                         >
                           Promover a Admin
+                        </button>
+                        <button
+                          onClick={() => deleteUserAccount(u.id, u.name)}
+                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                        >
+                          Excluir Usuário
                         </button>
                       </>
                     ) : u.role === "admin" ? (

@@ -1,4 +1,5 @@
 module.exports = {
+  root: true,
   env: {
     es6: true,
     node: true,
@@ -8,17 +9,14 @@ module.exports = {
     "plugin:import/errors",
     "plugin:import/warnings",
     "plugin:import/typescript",
-    "plugin:@typescript-eslint/recommended",
   ],
   parser: "@typescript-eslint/parser",
   parserOptions: {
-    project: ["./tsconfig.json"],
+    project: ["tsconfig.json"],
     sourceType: "module",
   },
   ignorePatterns: [
-    ".eslintrc.js", // Ignora o próprio arquivo de config
-    "/lib/**/*",    // Ignora arquivos compilados ou gerados.
-    "/generated/**/*",
+    "/lib/**/*", // Ignore built files.
   ],
   plugins: [
     "@typescript-eslint",
@@ -27,7 +25,6 @@ module.exports = {
   rules: {
     "quotes": ["error", "double"],
     "import/no-unresolved": 0,
-    "indent": ["error", 2],
-    "@typescript-eslint/no-explicit-any": "warn"
+    "indent": ["error", 2]
   },
 };
