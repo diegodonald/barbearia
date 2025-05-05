@@ -58,22 +58,26 @@ function generateSlots(
     const [beHour, beMinute] = breakEnd.split(":").map(Number);
     breakEndTotal = beHour * 60 + beMinute;
   }
-
   const slots: string[] = [];
-  for (let time = startTotal; time <= endTotal; time += interval) {
-    // Se os horários de intervalo forem definidos e o slot cair dentro (inclusive) desse período, pula-o
-    if (
-      breakStartTotal >= 0 &&
-      breakEndTotal > 0 &&
-      time >= breakStartTotal &&
-      time <= breakEndTotal
-    ) {
-      continue;
+  for (let time = startTotal; time < endTotal - interval + 1; time += interval) {
+    // Verificação rigorosa do intervalo: pula slots que começam durante o intervalo
+    // ou slots que terminam durante o intervalo, ou slots que englobam todo o intervalo
+    if (breakStartTotal >= 0 && breakEndTotal > 0) {
+      const slotEnd = time + interval;
+      if (
+        (time >= breakStartTotal && time < breakEndTotal) || // Slot começa durante o intervalo
+        (slotEnd > breakStartTotal && slotEnd <= breakEndTotal) || // Slot termina durante o intervalo
+        (time < breakStartTotal && slotEnd > breakEndTotal) // Slot contém todo o intervalo
+      ) {
+        continue;
+      }
     }
+    
     const hour = Math.floor(time / 60);
     const minute = time % 60;
     slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
   }
+  
   return slots;
 }
 
@@ -119,7 +123,6 @@ const defaultOperatingHours: OperatingHours = {
   sábado: { open: "09:00", breakStart: "12:00", breakEnd: "13:30", close: "14:00", active: true },
   domingo: { active: false },
 };
-
 interface Barber {
   id: string;
   name: string;
@@ -183,7 +186,6 @@ function getEffectiveDayConfig(
   const globalConfig = globalOperatingHours[dayName];
   return globalConfig && globalConfig.active && globalConfig.open && globalConfig.close ? globalConfig : null;
 }
-
 // A partir dos free slots individuais de cada barbeiro disponível (fullSlots menos os slots reservados),
 // retorna a união desses free slots para o dia.
 function getUnionFreeSlots(
@@ -203,12 +205,12 @@ function getUnionFreeSlots(
     );
     if (effectiveConfig) {
       const fullSlots = generateSlots(
-  effectiveConfig.open!,
-  effectiveConfig.breakStart,
-  effectiveConfig.breakEnd,
-  effectiveConfig.close!,
-  30
-);
+        effectiveConfig.open!,
+        effectiveConfig.breakStart,
+        effectiveConfig.breakEnd,
+        effectiveConfig.close!,
+        30
+      );
       const booked = bookedSlotsMap[barber.id] || [];
       const freeSlots = fullSlots.filter((slot) => !booked.includes(slot));
       console.log(`Free slots for ${barber.name}:`, freeSlots);
@@ -256,7 +258,6 @@ const Agendamento: React.FC = () => {
   // States para configuração individual, se um barbeiro específico for selecionado
   const [indivOperatingHours, setIndivOperatingHours] = useState<OperatingHours | null>(null);
   const [indivExceptions, setIndivExceptions] = useState<any[]>([]);
-
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
@@ -426,12 +427,12 @@ const Agendamento: React.FC = () => {
         return;
       }
       const fullSlots = generateSlots(
-  effectiveConfig.open!,
-  effectiveConfig.breakStart,
-  effectiveConfig.breakEnd,
-  effectiveConfig.close!,
-  30
-);
+        effectiveConfig.open!,
+        effectiveConfig.breakStart,
+        effectiveConfig.breakEnd,
+        effectiveConfig.close!,
+        30
+      );
       const barberBooked = bookedSlotsByBarber[specificBarber.id] || [];
       const free = fullSlots.filter((slot) => !barberBooked.includes(slot));
       setComputedSlots(groupSlots(free));
@@ -481,87 +482,120 @@ const Agendamento: React.FC = () => {
 
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDate) {
-      setFeedback("Por favor, selecione uma data.");
+    if (!selectedDate || !selectedTimeSlot || !selectedService) {
+      setFeedback("Preencha todos os campos obrigatórios.");
       return;
     }
-    if (!selectedTimeSlot) {
-      setFeedback("Por favor, selecione um horário.");
-      return;
-    }
-    if (!selectedService) {
-      setFeedback("Serviço não selecionado.");
-      return;
-    }
-// Declare variáveis para os horários e os intervalos
-let openTime: string | undefined;
-let closeTime: string | undefined;
-let breakStartTime: string | undefined;
-let breakEndTime: string | undefined;
+    
+    // Declare variáveis para os horários e os intervalos
+    let openTime: string | undefined;
+    let closeTime: string | undefined;
+    let breakStartTime: string | undefined;
+    let breakEndTime: string | undefined;
 
-const normalized = getLocalDateString(selectedDate);
-const exception = effectiveExceptions.find(
-  (ex) =>
-    ex.date === normalized &&
-    ex.status === "available" &&
-    ex.open &&
-    ex.close
-);
-if (exception) {
-  openTime = exception.open;
-  closeTime = exception.close;
-  // Se houver exceção, você pode optar por não usar intervalos
-  breakStartTime = undefined;
-  breakEndTime = undefined;
-} else {
-  const dayName = getDayName(selectedDate);
-  if (selectedBarber !== "Qualquer") {
-    const dayConfig = effectiveOperatingHours[dayName];
-    if (!dayConfig) {
+    const normalized = getLocalDateString(selectedDate);
+    const exception = effectiveExceptions.find(
+      (ex) =>
+        ex.date === normalized &&
+        ex.status === "available" &&
+        ex.open &&
+        ex.close
+    );
+    
+    if (exception) {
+      openTime = exception.open;
+      closeTime = exception.close;
+      // Se houver exceção, você pode optar por não usar intervalos
+      breakStartTime = undefined;
+      breakEndTime = undefined;
+    } else {
+      const dayName = getDayName(selectedDate);
+      if (selectedBarber !== "Qualquer") {
+        const dayConfig = effectiveOperatingHours[dayName];
+        if (!dayConfig) {
+          setFeedback("Horários não configurados para o dia selecionado.");
+          return;
+        }
+        if (dayConfig.active && dayConfig.open && dayConfig.close) {
+          openTime = dayConfig.open;
+          closeTime = dayConfig.close;
+          // Inclui os campos de intervalo, se configurados
+          breakStartTime = dayConfig.breakStart;
+          breakEndTime = dayConfig.breakEnd;
+        }
+      } else {
+        // Se "Qualquer Barbeiro", usamos a configuração global do dia
+        const globalConfig = effectiveOperatingHours[getDayName(selectedDate)];
+        if (globalConfig && globalConfig.active && globalConfig.open && globalConfig.close) {
+          openTime = globalConfig.open;
+          closeTime = globalConfig.close;
+          breakStartTime = globalConfig.breakStart;
+          breakEndTime = globalConfig.breakEnd;
+        }
+      }
+    }
+    
+    if (!openTime || !closeTime) {
       setFeedback("Horários não configurados para o dia selecionado.");
       return;
     }
-    if (dayConfig.active && dayConfig.open && dayConfig.close) {
-      openTime = dayConfig.open;
-      closeTime = dayConfig.close;
-      // Inclui os campos de intervalo, se configurados
-      breakStartTime = dayConfig.breakStart;
-      breakEndTime = dayConfig.breakEnd;
-    }
-  } else {
-    // Se "Qualquer Barbeiro", a lógica pode vir de uma união de configurações individuais,
-    // mas para o caso de confirmar o agendamento, verifique um dos modos ou defina a partir do global.
-    // Por simplicidade, usaremos a configuração global do dia.
-    const globalConfig = effectiveOperatingHours[getDayName(selectedDate)];
-    if (globalConfig && globalConfig.active && globalConfig.open && globalConfig.close) {
-      openTime = globalConfig.open;
-      closeTime = globalConfig.close;
-      breakStartTime = globalConfig.breakStart;
-      breakEndTime = globalConfig.breakEnd;
-    }
-  }
-}
-if (!openTime || !closeTime) {
-  setFeedback("Horários não configurados para o dia selecionado.");
-  return;
-}
-// Agora a chamada passa os 5 argumentos:
-const dynamicSlots = generateSlots(openTime, breakStartTime, breakEndTime, closeTime, 30);
+    
+    // Agora geramos todos os slots disponíveis com a lógica corrigida
+    const dynamicSlots = generateSlots(openTime, breakStartTime, breakEndTime, closeTime, 30);
+    
+    // Calcula quantos slots são necessários para o serviço
     const slotsNeeded = Math.ceil(selectedService.duration / 30);
+    
+    // Verifica se o slot selecionado existe e se há slots suficientes após ele
     const index = dynamicSlots.indexOf(selectedTimeSlot);
-    if (index === -1 || index + slotsNeeded > dynamicSlots.length) {
-      setFeedback("O horário selecionado não permite o serviço completo.");
+    if (index === -1) {
+      setFeedback("O horário selecionado não está disponível.");
       return;
     }
+    
+    if (index + slotsNeeded > dynamicSlots.length) {
+      setFeedback("O horário selecionado não permite completar o serviço antes do fechamento.");
+      return;
+    }
+    
+    // Verifica se todos os slots necessários estão consecutivos e disponíveis
     const requiredSlots = dynamicSlots.slice(index, index + slotsNeeded);
+    
+    // Verifica a continuidade (não quebrados por intervalo)
+    for (let i = 1; i < requiredSlots.length; i++) {
+      const prevSlot = requiredSlots[i-1];
+      const currSlot = requiredSlots[i];
+      
+      const [prevHour, prevMin] = prevSlot.split(":").map(Number);
+      const [currHour, currMin] = currSlot.split(":").map(Number);
+      
+      const prevTotalMins = prevHour * 60 + prevMin;
+      const currTotalMins = currHour * 60 + currMin;
+      
+      if (currTotalMins - prevTotalMins !== 30) {
+        setFeedback("O serviço não pode ser agendado porque cruza o horário de intervalo.");
+        return;
+      }
+    }
+    
     if (selectedBarber !== "Qualquer") {
+      // Verifica se os slots estão disponíveis para o barbeiro específico
+      const barberBooked = bookedSlotsByBarber[(selectedBarber as Barber).id] || [];
+      
+      if (requiredSlots.some(slot => barberBooked.includes(slot))) {
+        setFeedback("Um ou mais horários necessários já estão ocupados para este barbeiro.");
+        return;
+      }
+      
       await saveAppointment(selectedBarber as Barber, requiredSlots);
     } else {
+      // Para "Qualquer Barbeiro", encontre um que tenha todos os slots disponíveis
       const availableBarbeiros = barberList.filter((b) =>
         getEffectiveDayConfig(b, selectedDate, operatingHours || defaultOperatingHours, exceptions)
       );
+      
       let availableBarber: BarberWithSchedule | null = null;
-      const slotsNeeded = Math.ceil(selectedService.duration / 30);
+      
       for (const barber of availableBarbeiros) {
         const effectiveConfig = getEffectiveDayConfig(
           barber,
@@ -570,27 +604,59 @@ const dynamicSlots = generateSlots(openTime, breakStartTime, breakEndTime, close
           exceptions
         );
         if (!effectiveConfig) continue;
-        const fullSlots = generateSlots(
-  effectiveConfig.open!,
-  effectiveConfig.breakStart,
-  effectiveConfig.breakEnd,
-  effectiveConfig.close!,
-  30
-);
-        const startIndex = fullSlots.indexOf(selectedTimeSlot);
-        if (startIndex === -1 || startIndex + slotsNeeded > fullSlots.length) continue;
-        const requiredForBarber = fullSlots.slice(startIndex, startIndex + slotsNeeded);
+        
+        // Gera os slots específicos deste barbeiro (respeitando seu horário e intervalos)
+        const barberSlots = generateSlots(
+          effectiveConfig.open!,
+          effectiveConfig.breakStart,
+          effectiveConfig.breakEnd,
+          effectiveConfig.close!,
+          30
+        );
+        
+        // Verifica se o slot inicial existe nos slots deste barbeiro
+        const startIndex = barberSlots.indexOf(selectedTimeSlot);
+        if (startIndex === -1 || startIndex + slotsNeeded > barberSlots.length) continue;
+        
+        // Verifica se todos os slots estão disponíveis e consecutivos
+        const requiredForBarber = barberSlots.slice(startIndex, startIndex + slotsNeeded);
+        
+        // Verifica a continuidade (não quebrados por intervalo)
+        let isContinuous = true;
+        for (let i = 1; i < requiredForBarber.length; i++) {
+          const prevSlot = requiredForBarber[i-1];
+          const currSlot = requiredForBarber[i];
+          
+          const [prevHour, prevMin] = prevSlot.split(":").map(Number);
+          const [currHour, currMin] = currSlot.split(":").map(Number);
+          
+          const prevTotalMins = prevHour * 60 + prevMin;
+          const currTotalMins = currHour * 60 + currMin;
+          
+          if (currTotalMins - prevTotalMins !== 30) {
+            isContinuous = false;
+            break;
+          }
+        }
+        
+        if (!isContinuous) continue;
+        
+        // Verifica se algum slot já está ocupado
         const booked = bookedSlotsByBarber[barber.id] || [];
         if (requiredForBarber.some((slot) => booked.includes(slot))) continue;
+        
         availableBarber = barber;
         break;
       }
+      
       if (!availableBarber) {
-        setFeedback("Horário não disponível. Selecione outro horário.");
+        setFeedback("Não há barbeiros disponíveis para todos os horários necessários. Selecione outro horário.");
         return;
       }
+      
       await saveAppointment(availableBarber, requiredSlots);
     }
+    
     setShowPopup(true);
     setTimeout(() => {
       router.push("/");
