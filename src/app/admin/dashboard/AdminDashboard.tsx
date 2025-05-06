@@ -381,6 +381,16 @@ const AdminDashboard: React.FC = () => {
     return matchDate && matchBarber;
   });
 
+  // Ordena os agendamentos por data e horário antes de renderizar
+  const sortedAppointments = filteredAppointments.sort((a, b) => {
+    const dateComparison = a.dateStr.localeCompare(b.dateStr);
+    if (dateComparison !== 0) return dateComparison;
+
+    const timeA = a.timeSlot?.split(" - ")[0] || "";
+    const timeB = b.timeSlot?.split(" - ")[0] || "";
+    return timeA.localeCompare(timeB);
+  });
+
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
     
@@ -671,7 +681,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {filteredAppointments.length === 0 ? (
+      {sortedAppointments.length === 0 ? (
         <p>Nenhum agendamento encontrado.</p>
       ) : (
         <div className="overflow-x-auto">
@@ -688,7 +698,7 @@ const AdminDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="text-gray-600 divide-y">
-              {filteredAppointments.map((appointment) => (
+              {sortedAppointments.map((appointment) => (
                 <tr key={appointment.id} className="hover:bg-gray-50">
                   <td className="py-4 px-6">{formatDate(appointment.dateStr)}</td>
                   <td className="py-4 px-6">{appointment.timeSlot}</td>
