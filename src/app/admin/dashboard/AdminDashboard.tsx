@@ -19,6 +19,7 @@ import {
 import { db } from "@/lib/firebase";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
 import { OperatingHours } from "@/app/agendamento/page";
+import errorMessages from "@/utils/errorMessages";
 
 // Reutilizando funções de utilidade do agendamento
 function getLocalDateString(date: Date): string {
@@ -442,17 +443,26 @@ const AdminDashboard: React.FC = () => {
       
       const startIndex = allSlots.indexOf(editingTimeSlot);
       if (startIndex === -1) {
-        setEditFeedback("Horário inicial não está disponível");
+        setEditFeedback(errorMessages.slotNotAvailable);
         return;
       }
       
       if (startIndex + slotsNeeded > allSlots.length) {
-        setEditFeedback("Não há slots suficientes para completar este serviço");
+        setEditFeedback(errorMessages.serviceExceedsClosing);
         return;
       }
       
       // Verificar se os slots são consecutivos
       const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
+      
+      // Verificar se algum slot está ocupado para o barbeiro escolhido
+      const barberBooked = bookedSlotsByBarber[editingBarber.id] || [];
+      if (requiredSlots.some(slot => barberBooked.includes(slot))) {
+        setEditFeedback(errorMessages.slotAlreadyBooked);
+        return;
+      }
+      
+      // Verificar se os slots cruzam intervalo
       for (let i = 1; i < requiredSlots.length; i++) {
         const prevSlot = requiredSlots[i-1];
         const currSlot = requiredSlots[i];
@@ -464,7 +474,7 @@ const AdminDashboard: React.FC = () => {
         const currTotalMins = currHour * 60 + currMin;
         
         if (currTotalMins - prevTotalMins !== 30) {
-          setEditFeedback("Os horários não são consecutivos (pode haver um intervalo entre eles)");
+          setEditFeedback(errorMessages.serviceCrossesBreak);
           return;
         }
       }

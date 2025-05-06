@@ -19,6 +19,7 @@ import { db } from "@/lib/firebase";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
+import errorMessages from "@/utils/errorMessages";
 
 // ----------------------
 // Helper Functions
@@ -647,12 +648,12 @@ useEffect(() => {
     // Verifica se o slot selecionado existe e se há slots suficientes após ele
     const index = dynamicSlots.indexOf(selectedTimeSlot);
     if (index === -1) {
-      setFeedback("O horário selecionado não está disponível.");
+      setFeedback(errorMessages.slotNotAvailable);
       return;
     }
     
     if (index + slotsNeeded > dynamicSlots.length) {
-      setFeedback("O horário selecionado não permite completar o serviço antes do fechamento.");
+      setFeedback(errorMessages.serviceExceedsClosing);
       return;
     }
     
@@ -671,7 +672,7 @@ useEffect(() => {
       const currTotalMins = currHour * 60 + currMin;
       
       if (currTotalMins - prevTotalMins !== 30) {
-        setFeedback("O serviço não pode ser agendado porque cruza o horário de intervalo.");
+        setFeedback(errorMessages.serviceCrossesBreak);
         return;
       }
     }

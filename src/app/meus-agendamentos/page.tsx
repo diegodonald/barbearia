@@ -20,6 +20,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { ExtendedUser } from "@/hooks/useAuth";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
+import errorMessages from "@/utils/errorMessages";
 
 // Função auxiliar para converter datas em "YYYY-MM-DD" usando o horário local
 function getLocalDateString(date: Date): string {
@@ -34,7 +35,7 @@ const formatDate = (dateStr: string): string => {
   const parts = dateStr.split("-");
   if (parts.length !== 3) return dateStr;
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
-};
+}
 
 // Obtém o nome do dia a partir da data
 function getDayName(date: Date): keyof OperatingHours {
@@ -487,7 +488,7 @@ const ClientAppointments: React.FC = () => {
 
     try {
       // Encontrar o serviço selecionado para obter a duração
-      const service = serviceOptions.find(s => s.name === editingService);
+      const service = serviceOptions.find((s) => s.name === editingService);
       if (!service) {
         setEditFeedback("Serviço não encontrado");
         return;
@@ -495,45 +496,53 @@ const ClientAppointments: React.FC = () => {
 
       // Calcular os slots necessários baseados na duração
       const slotsNeeded = Math.ceil(service.duration / 30);
-      
+
       // Verificar se há slots suficientes disponíveis após o horário inicial
       const allSlots = [
         ...availableSlots.manha,
         ...availableSlots.tarde,
-        ...availableSlots.noite
+        ...availableSlots.noite,
       ].sort();
-      
+
       const startIndex = allSlots.indexOf(editingTimeSlot);
       if (startIndex === -1) {
-        setEditFeedback("Horário inicial não está disponível");
+        setEditFeedback(errorMessages.slotNotAvailable);
         return;
       }
-      
+
       if (startIndex + slotsNeeded > allSlots.length) {
-        setEditFeedback("Não há slots suficientes para completar este serviço");
+        setEditFeedback(errorMessages.serviceExceedsClosing);
         return;
       }
-      
-      // Verificar se os slots são consecutivos
+
+      // Verificar se os slots necessários estão ocupados
       const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
+      const barberBooked = bookedSlotsByBarber[editingBarber.id] || [];
+      if (requiredSlots.some((slot) => barberBooked.includes(slot))) {
+        setEditFeedback(errorMessages.slotAlreadyBooked); // Mensagem correta para slots ocupados
+        return;
+      }
+
+      // Verificar se os slots cruzam intervalo
       for (let i = 1; i < requiredSlots.length; i++) {
-        const prevSlot = requiredSlots[i-1];
+        const prevSlot = requiredSlots[i - 1];
         const currSlot = requiredSlots[i];
-        
+
         const [prevHour, prevMin] = prevSlot.split(":").map(Number);
         const [currHour, currMin] = currSlot.split(":").map(Number);
-        
+
         const prevTotalMins = prevHour * 60 + prevMin;
         const currTotalMins = currHour * 60 + currMin;
-        
+
         if (currTotalMins - prevTotalMins !== 30) {
-          setEditFeedback("Os horários não são consecutivos (pode haver um intervalo entre eles)");
+          setEditFeedback(errorMessages.serviceCrossesBreak); // Mensagem correta para intervalos
           return;
         }
       }
-      
+
+      // Atualizar o agendamento no banco de dados
       const dateStr = getLocalDateString(editingDate);
-      
+
       await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
         dateStr: dateStr,
         timeSlots: requiredSlots,
@@ -543,7 +552,7 @@ const ClientAppointments: React.FC = () => {
         barberId: editingBarber.id,
         status: editingAppointment.status,
       });
-      
+
       handleCancelEdit();
       setFeedback("Agendamento atualizado com sucesso!");
     } catch (error) {
