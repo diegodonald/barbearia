@@ -18,10 +18,14 @@ import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { ExtendedUser } from "@/hooks/useAuth";
-// Removi o Footer e Header, pois o Header já foi corrigido e o Footer está duplicado.
-// Se necessário, mantenha o Header, mas certifique-se de que o layout global não adicione outro Footer.
-// import Header from "@/components/Header";
-// import Footer from "@/components/Footer";
+
+// Extend the ExtendedUser type to include the 'name' property
+interface ExtendedUserWithName extends ExtendedUser {
+  name?: string;
+  horarios?: OperatingHours | null;
+  exceptions?: any[];
+}
+import { useOperatingHours } from "@/hooks/useOperatingHours";
 
 // Função auxiliar para converter "YYYY-MM-DD" para "DD/MM/YYYY"
 const formatDate = (dateStr: string): string => {
@@ -38,12 +42,90 @@ function getLocalDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Função para obter o nome do dia da semana
+function getDayName(date: Date): keyof OperatingHours {
+  const days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  return days[date.getDay()] as keyof OperatingHours;
+}
+
+// Gera os slots de horário entre um início e um fim com um intervalo (em minutos)
+function generateSlots(
+  open: string,
+  breakStart: string | undefined,
+  breakEnd: string | undefined,
+  end: string,
+  interval: number
+): string[] {
+  const [openHour, openMinute] = open.split(":").map(Number);
+  const startTotal = openHour * 60 + openMinute;
+  const [endHour, endMinute] = end.split(":").map(Number);
+  const endTotal = endHour * 60 + endMinute;
+
+  let breakStartTotal = -1, breakEndTotal = -1;
+  if (breakStart && breakEnd) {
+    const [bsHour, bsMinute] = breakStart.split(":").map(Number);
+    breakStartTotal = bsHour * 60 + bsMinute;
+    const [beHour, beMinute] = breakEnd.split(":").map(Number);
+    breakEndTotal = beHour * 60 + beMinute;
+  }
+  
+  const slots: string[] = [];
+  for (let time = startTotal; time < endTotal - interval + 1; time += interval) {
+    if (breakStartTotal >= 0 && breakEndTotal > 0) {
+      const slotEnd = time + interval;
+      if (
+        (time >= breakStartTotal && time < breakEndTotal) ||
+        (slotEnd > breakStartTotal && slotEnd <= breakEndTotal) ||
+        (time < breakStartTotal && slotEnd > breakEndTotal)
+      ) {
+        continue;
+      }
+    }
+    
+    const hour = Math.floor(time / 60);
+    const minute = time % 60;
+    slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
+  }
+  
+  return slots;
+}
+
+// Agrupa os slots em períodos para exibição (manhã, tarde e noite)
+function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite: string[] } {
+  const manha = slots.filter((slot) => slot < "12:00");
+  const tarde = slots.filter((slot) => slot >= "12:00" && slot < "17:00");
+  const noite = slots.filter((slot) => slot >= "17:00");
+  return { manha, tarde, noite };
+}
+
+// Interface para configuração de um dia
+interface DayConfig {
+  open?: string;
+  breakStart?: string;
+  breakEnd?: string;
+  close?: string;
+  active: boolean;
+}
+
+// OperatingHours interface
+interface OperatingHours {
+  domingo: DayConfig;
+  segunda: DayConfig;
+  terça: DayConfig;
+  quarta: DayConfig;
+  quinta: DayConfig;
+  sexta: DayConfig;
+  sábado: DayConfig;
+}
+
 // Interface para agendamento
 interface Appointment {
   id: string;
   dateStr: string;
-  timeSlot: string;
+  timeSlot?: string;
+  timeSlots?: string[];
   service: string;
+  duration?: number;
   barber: string;
   barberId: string;
   name: string; // Nome do cliente
@@ -54,17 +136,73 @@ interface Appointment {
 interface BarberOption {
   id: string;
   name: string;
+  horarios?: OperatingHours | null;
+  exceptions?: any[];
+}
+
+// Interface para serviços
+interface ServiceOption {
+  name: string;
+  duration: number;
+  value: number;
+}
+
+// Função para obter configuração efetiva do dia
+function getEffectiveDayConfig(
+  barber: BarberOption,
+  date: Date,
+  globalOperatingHours: OperatingHours,
+  globalExceptions: any[]
+): DayConfig | null {
+  const dayName = getDayName(date);
+  const normalizedDate = getLocalDateString(date);
+
+  // Verifica configuração individual do barbeiro
+  let individualConfig: DayConfig | null = null;
+  if (barber.horarios && barber.horarios[dayName] !== undefined) {
+    individualConfig = barber.horarios[dayName];
+  }
+
+  // Verifica exceções (individuais ou globais)
+  const effectiveExceptions = barber.exceptions && barber.exceptions.length > 0 ? barber.exceptions : globalExceptions;
+  if (effectiveExceptions) {
+    const exception = effectiveExceptions.find((ex: any) => ex.date === normalizedDate);
+    if (exception) {
+      if (exception.status === "blocked") {
+        return null;
+      }
+      if (exception.status === "available" && exception.open && exception.close) {
+        return { open: exception.open, close: exception.close, active: true };
+      }
+    }
+  }
+
+  // Usa configuração individual, se disponível
+  if (individualConfig) {
+    return individualConfig && individualConfig.active && individualConfig.open && individualConfig.close
+      ? individualConfig
+      : null;
+  }
+
+  // Caso contrário, usa a configuração global
+  const globalConfig = globalOperatingHours[dayName];
+  return globalConfig && globalConfig.active && globalConfig.open && globalConfig.close ? globalConfig : null;
 }
 
 const BarberDashboard: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const { operatingHours, exceptions } = useOperatingHours();
 
   // Estados para listagem e edição de agendamentos existentes
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(true);
   const [filterDate, setFilterDate] = useState<string>("");
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [editingDate, setEditingDate] = useState<Date | null>(null);
+  const [editingTimeSlot, setEditingTimeSlot] = useState<string>("");
+  const [editingService, setEditingService] = useState<string>("");
+  const [editFeedback, setEditFeedback] = useState<string>("");
 
   // Estados para novos agendamentos para clientes
   const [isCreating, setIsCreating] = useState<boolean>(false);
@@ -72,33 +210,50 @@ const BarberDashboard: React.FC = () => {
   const [newClientName, setNewClientName] = useState<string>("");
   const [newDate, setNewDate] = useState<Date | null>(null);
   const [newTimeSlot, setNewTimeSlot] = useState<string>("");
-  const [newBookedSlots, setNewBookedSlots] = useState<string[]>([]);
   const [newFeedback, setNewFeedback] = useState<string>("");
 
   // Estados para opções dinâmicas
-  const [serviceOptions, setServiceOptions] = useState<string[]>([]);
+  const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
   const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
 
   // Dados do barbeiro logado
   const [barberInfo, setBarberInfo] = useState<BarberOption | null>(null);
 
-  // Horários disponíveis (fixos, para demonstração)
-  const availableSlots = {
-    morning: ["10:00", "10:30", "11:00"],
-    afternoon: ["12:30", "13:00", "13:30", "14:00"],
-    evening: ["17:00", "17:30", "18:00"],
-  };
+  // Disponibilidade de horários (para edição e criação)
+  const [availableSlots, setAvailableSlots] = useState<{
+    manha: string[];
+    tarde: string[];
+    noite: string[];
+  }>({ manha: [], tarde: [], noite: [] });
+  
+  const [newAvailableSlots, setNewAvailableSlots] = useState<{
+    manha: string[];
+    tarde: string[];
+    noite: string[];
+  }>({ manha: [], tarde: [], noite: [] });
+
+  // Mapeia os slots já reservados
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   // Verificação de autenticação e role
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
+      if (user) {
+        const userData = user as ExtendedUserWithName;
+      }
     }
   }, [user, loading, router]);
 
   useEffect(() => {
     if (!loading && user) {
-      setBarberInfo({ id: user.uid, name: (user as any).name || "" });
+      const userData = user as ExtendedUserWithName;
+      setBarberInfo({ 
+        id: user.uid, 
+        name: userData.name || "", 
+        horarios: userData.horarios || null,
+        exceptions: userData.exceptions || []
+      });
     }
   }, [user, loading]);
 
@@ -118,16 +273,22 @@ const BarberDashboard: React.FC = () => {
         where("barberId", "==", user.uid)
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const appsData: Appointment[] = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          dateStr: docSnap.data().dateStr,
-          timeSlot: docSnap.data().timeSlot,
-          service: docSnap.data().service,
-          barber: docSnap.data().barber,
-          barberId: docSnap.data().barberId,
-          name: docSnap.data().name,
-          status: docSnap.data().status ? docSnap.data().status : "confirmado",
-        }));
+        const appsData: Appointment[] = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          const timeSlotValue = data.timeSlot || (data.timeSlots ? data.timeSlots.join(" - ") : "");
+          return {
+            id: docSnap.id,
+            dateStr: data.dateStr,
+            timeSlot: timeSlotValue,
+            timeSlots: data.timeSlots || (data.timeSlot ? [data.timeSlot] : []),
+            service: data.service,
+            duration: data.duration || 30,
+            barber: data.barber,
+            barberId: data.barberId,
+            name: data.name,
+            status: data.status ? data.status : "confirmado",
+          };
+        });
         setAppointments(appsData);
         setLoadingAppointments(false);
       });
@@ -141,7 +302,14 @@ const BarberDashboard: React.FC = () => {
       try {
         const q = query(collection(db, "servicos"));
         const snapshot = await getDocs(q);
-        const services = snapshot.docs.map((doc) => doc.data().name) as string[];
+        const services = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            name: data.name,
+            duration: Number(data.duration),
+            value: Number(data.value),
+          };
+        });
         setServiceOptions(services);
       } catch (error) {
         console.error("Erro ao buscar serviços:", error);
@@ -150,28 +318,153 @@ const BarberDashboard: React.FC = () => {
     fetchServiceOptions();
   }, []);
 
-  // Busca das opções de barbeiros para referência (se necessário)
+  // Atualiza os horários ocupados para o novo agendamento
   useEffect(() => {
-    async function fetchBarberOptions() {
-      try {
-        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
-        const snapshot = await getDocs(q);
-        const barbers = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: doc.data().name,
-        })) as BarberOption[];
-        setBarberOptions(barbers);
-      } catch (error) {
-        console.error("Erro ao buscar barbeiros:", error);
-      }
+    if (!newDate || !barberInfo) return;
+    
+    const normalizedDateStr = getLocalDateString(newDate);
+    
+    // Obtém a configuração do dia
+    const dayConfig = getEffectiveDayConfig(
+      barberInfo,
+      newDate,
+      operatingHours || {},
+      exceptions || []
+    );
+    
+    if (!dayConfig || !dayConfig.active || !dayConfig.open || !dayConfig.close) {
+      setNewFeedback("Este dia não está disponível para agendamentos.");
+      setNewAvailableSlots({ manha: [], tarde: [], noite: [] });
+      return;
     }
-    fetchBarberOptions();
-  }, []);
+    
+    // Gera todos os slots possíveis para o dia
+    const allPossibleSlots = generateSlots(
+      dayConfig.open,
+      dayConfig.breakStart,
+      dayConfig.breakEnd,
+      dayConfig.close,
+      30
+    );
+    
+    // Busca os agendamentos existentes para esta data
+    const q = query(
+      collection(db, "agendamentos"),
+      where("dateStr", "==", normalizedDateStr),
+      where("barberId", "==", barberInfo.id)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      // Reúne todos os slots ocupados
+      let occupied: string[] = [];
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.timeSlots && Array.isArray(data.timeSlots)) {
+          occupied = [...occupied, ...data.timeSlots];
+        } else if (data.timeSlot) {
+          occupied.push(data.timeSlot);
+        }
+      });
+      
+      setBookedSlots(occupied);
+      
+      // Filtra para obter apenas os slots disponíveis
+      const availableTimeSlots = allPossibleSlots.filter(slot => !occupied.includes(slot));
+      
+      if (availableTimeSlots.length === 0) {
+        setNewFeedback("Não há horários disponíveis para esta data.");
+        setNewAvailableSlots({ manha: [], tarde: [], noite: [] });
+        return;
+      }
+      
+      setNewAvailableSlots(groupSlots(availableTimeSlots));
+      setNewFeedback("");
+    });
+    
+    return () => unsubscribe();
+  }, [newDate, barberInfo, operatingHours, exceptions]);
+
+  // Atualiza os slots disponíveis para edição
+  useEffect(() => {
+    if (!editingDate || !barberInfo || !editingAppointment) return;
+    
+    const normalizedDateStr = getLocalDateString(editingDate);
+    const currentAppointmentId = editingAppointment.id;
+    
+    // Obtém a configuração do dia
+    const dayConfig = getEffectiveDayConfig(
+      barberInfo,
+      editingDate,
+      operatingHours || {},
+      exceptions || []
+    );
+    
+    if (!dayConfig || !dayConfig.active || !dayConfig.open || !dayConfig.close) {
+      setEditFeedback("Este dia não está disponível para agendamentos.");
+      setAvailableSlots({ manha: [], tarde: [], noite: [] });
+      return;
+    }
+    
+    // Gera todos os slots possíveis para o dia
+    const allPossibleSlots = generateSlots(
+      dayConfig.open,
+      dayConfig.breakStart,
+      dayConfig.breakEnd,
+      dayConfig.close,
+      30
+    );
+    
+    // Busca os agendamentos existentes para esta data (excluindo o atual)
+    const q = query(
+      collection(db, "agendamentos"),
+      where("dateStr", "==", normalizedDateStr),
+      where("barberId", "==", barberInfo.id)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      // Reúne todos os slots ocupados, excluindo o agendamento atual
+      let occupied: string[] = [];
+      snapshot.docs.forEach((docSnap) => {
+        if (docSnap.id !== currentAppointmentId) {
+          const data = docSnap.data();
+          if (data.timeSlots && Array.isArray(data.timeSlots)) {
+            occupied = [...occupied, ...data.timeSlots];
+          } else if (data.timeSlot) {
+            occupied.push(data.timeSlot);
+          }
+        }
+      });
+      
+      // Filtra para obter apenas os slots disponíveis
+      const availableTimeSlots = allPossibleSlots.filter(slot => !occupied.includes(slot));
+      
+      if (availableTimeSlots.length === 0) {
+        setEditFeedback("Não há horários disponíveis para esta data.");
+        setAvailableSlots({ manha: [], tarde: [], noite: [] });
+        return;
+      }
+      
+      setAvailableSlots(groupSlots(availableTimeSlots));
+      setEditFeedback("");
+    });
+    
+    return () => unsubscribe();
+  }, [editingDate, barberInfo, editingAppointment, operatingHours, exceptions]);
 
   // Filtro dos agendamentos existentes por data
   const filteredAppointments = appointments.filter((appt) =>
     filterDate ? appt.dateStr === filterDate : true
   );
+
+  // Ordena os agendamentos por data e horário antes de renderizar
+  const sortedAppointments = filteredAppointments.sort((a, b) => {
+    const dateComparison = a.dateStr.localeCompare(b.dateStr);
+    if (dateComparison !== 0) return dateComparison;
+  
+    const timeA = a.timeSlot?.split(" - ")[0] || "";
+    const timeB = b.timeSlot?.split(" - ")[0] || "";
+    return timeA.localeCompare(timeB);
+  });
 
   const setTodayFilter = () => {
     const today = new Date();
@@ -197,26 +490,97 @@ const BarberDashboard: React.FC = () => {
   // Edição dos agendamentos existentes
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
+    
+    // Inicializa os estados de edição
+    const [year, month, day] = appt.dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    setEditingDate(date);
+    
+    setEditingTimeSlot(appt.timeSlots?.[0] || appt.timeSlot || "");
+    setEditingService(appt.service);
+    setEditFeedback("");
   };
 
   const handleCancelEdit = () => {
     setEditingAppointment(null);
+    setEditingDate(null);
+    setEditingTimeSlot("");
+    setEditingService("");
+    setEditFeedback("");
   };
 
   const handleSaveEdit = async () => {
-    if (!editingAppointment) return;
+    if (!editingAppointment || !editingDate || !editingTimeSlot || !editingService || !barberInfo) {
+      setEditFeedback("Preencha todos os campos");
+      return;
+    }
+
     try {
+      // Encontrar o serviço selecionado para obter a duração
+      const service = serviceOptions.find(s => s.name === editingService);
+      if (!service) {
+        setEditFeedback("Serviço não encontrado");
+        return;
+      }
+
+      // Calcular os slots necessários baseados na duração
+      const slotsNeeded = Math.ceil(service.duration / 30);
+      
+      // Verificar se há slots suficientes disponíveis após o horário inicial
+      const allSlots = [
+        ...availableSlots.manha,
+        ...availableSlots.tarde,
+        ...availableSlots.noite
+      ].sort();
+      
+      const startIndex = allSlots.indexOf(editingTimeSlot);
+      if (startIndex === -1) {
+        setEditFeedback("Horário inicial não está disponível");
+        return;
+      }
+      
+      if (startIndex + slotsNeeded > allSlots.length) {
+        setEditFeedback("Não há slots suficientes para completar este serviço");
+        return;
+      }
+      
+      // Verificar se os slots são consecutivos
+      const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
+      for (let i = 1; i < requiredSlots.length; i++) {
+        const prevSlot = requiredSlots[i-1];
+        const currSlot = requiredSlots[i];
+        
+        const [prevHour, prevMin] = prevSlot.split(":").map(Number);
+        const [currHour, currMin] = currSlot.split(":").map(Number);
+        
+        const prevTotalMins = prevHour * 60 + prevMin;
+        const currTotalMins = currHour * 60 + currMin;
+        
+        if (currTotalMins - prevTotalMins !== 30) {
+          setEditFeedback("Os horários não são consecutivos (pode haver um intervalo entre eles)");
+          return;
+        }
+      }
+      
+      const dateStr = getLocalDateString(editingDate);
+      
       await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
-        dateStr: editingAppointment.dateStr,
-        timeSlot: editingAppointment.timeSlot,
-        service: editingAppointment.service,
+        dateStr: dateStr,
+        timeSlots: requiredSlots,
+        timeSlot: null,  // Limpa o campo antigo
+        service: editingService,
+        duration: service.duration,
+        barber: barberInfo.name,
+        barberId: barberInfo.id,
         status: editingAppointment.status,
-        barber: editingAppointment.barber,
-        barberId: editingAppointment.barberId,
       });
-      setEditingAppointment(null);
+      
+      handleCancelEdit();
+      setNewFeedback("Agendamento atualizado com sucesso!");
+      setTimeout(() => setNewFeedback(""), 3000);
     } catch (error) {
       console.error("Erro ao atualizar agendamento:", error);
+      setEditFeedback("Erro ao salvar. Tente novamente.");
     }
   };
 
@@ -224,60 +588,11 @@ const BarberDashboard: React.FC = () => {
     if (!confirm("Deseja realmente cancelar este agendamento?")) return;
     try {
       await deleteDoc(doc(db, "agendamentos", appt.id));
+      setNewFeedback("Agendamento cancelado com sucesso!");
+      setTimeout(() => setNewFeedback(""), 3000);
     } catch (error) {
       console.error("Erro ao cancelar agendamento:", error);
-    }
-  };
-
-  // Atualiza os horários ocupados para o novo agendamento (baseado na data selecionada)
-  useEffect(() => {
-    if (newDate && barberInfo) {
-      const normalizedDateStr = getLocalDateString(newDate);
-      const q = query(
-        collection(db, "agendamentos"),
-        where("dateStr", "==", normalizedDateStr),
-        where("barberId", "==", barberInfo.id)
-      );
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const booked = Array.from(
-          new Set(snapshot.docs.map((docSnap) => docSnap.data().timeSlot))
-        );
-        setNewBookedSlots(booked);
-      });
-      return () => unsubscribe();
-    } else {
-      setNewBookedSlots([]);
-    }
-  }, [newDate, barberInfo]);
-
-  const saveNewAppointment = async () => {
-    if (!newDate || !barberInfo) return;
-    const normalizedDateStr = getLocalDateString(newDate);
-    try {
-      await addDoc(collection(db, "agendamentos"), {
-        uid: user?.uid,
-        email: user?.email,
-        name: newClientName,
-        service: newService,
-        barber: barberInfo.name,
-        barberId: barberInfo.id,
-        dateStr: normalizedDateStr,
-        timeSlot: newTimeSlot,
-        createdAt: new Date(),
-        status: "confirmado",
-      });
-      setNewFeedback("Agendamento salvo com sucesso!");
-      setNewService("");
-      setNewClientName("");
-      setNewDate(null);
-      setNewTimeSlot("");
-      setTimeout(() => {
-        setIsCreating(false);
-        setNewFeedback("");
-      }, 2000);
-    } catch (error) {
-      console.error("Erro ao salvar agendamento:", error);
-      setNewFeedback("Erro ao salvar agendamento. Tente novamente.");
+      setNewFeedback("Erro ao cancelar agendamento. Tente novamente.");
     }
   };
 
@@ -291,11 +606,96 @@ const BarberDashboard: React.FC = () => {
       setNewFeedback("Por favor, selecione um horário.");
       return;
     }
-    if (newBookedSlots.includes(newTimeSlot)) {
+    if (!newService) {
+      setNewFeedback("Por favor, selecione um serviço.");
+      return;
+    }
+    if (!newClientName) {
+      setNewFeedback("Por favor, informe o nome do cliente.");
+      return;
+    }
+    if (bookedSlots.includes(newTimeSlot)) {
       setNewFeedback("Esse horário não está disponível. Por favor, escolha outro.");
       return;
     }
-    await saveNewAppointment();
+    
+    try {
+      // Encontrar o serviço selecionado para obter a duração
+      const service = serviceOptions.find(s => s.name === newService);
+      if (!service) {
+        setNewFeedback("Serviço não encontrado");
+        return;
+      }
+
+      // Calcular os slots necessários baseados na duração
+      const slotsNeeded = Math.ceil(service.duration / 30);
+      
+      // Verificar se há slots suficientes disponíveis após o horário inicial
+      const allSlots = [
+        ...newAvailableSlots.manha,
+        ...newAvailableSlots.tarde,
+        ...newAvailableSlots.noite
+      ].sort();
+      
+      const startIndex = allSlots.indexOf(newTimeSlot);
+      if (startIndex === -1) {
+        setNewFeedback("Horário inicial não está disponível");
+        return;
+      }
+      
+      if (startIndex + slotsNeeded > allSlots.length) {
+        setNewFeedback("Não há slots suficientes para completar este serviço");
+        return;
+      }
+      
+      // Verificar se os slots são consecutivos
+      const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
+      for (let i = 1; i < requiredSlots.length; i++) {
+        const prevSlot = requiredSlots[i-1];
+        const currSlot = requiredSlots[i];
+        
+        const [prevHour, prevMin] = prevSlot.split(":").map(Number);
+        const [currHour, currMin] = currSlot.split(":").map(Number);
+        
+        const prevTotalMins = prevHour * 60 + prevMin;
+        const currTotalMins = currHour * 60 + currMin;
+        
+        if (currTotalMins - prevTotalMins !== 30) {
+          setNewFeedback("Os horários não são consecutivos (pode haver um intervalo entre eles)");
+          return;
+        }
+      }
+      
+      const normalizedDateStr = getLocalDateString(newDate);
+      
+      await addDoc(collection(db, "agendamentos"), {
+        uid: barberInfo?.id, // Usando o ID do barbeiro como "proprietário" do agendamento
+        email: user?.email,
+        name: newClientName,
+        service: newService,
+        duration: service.duration,
+        barber: barberInfo?.name,
+        barberId: barberInfo?.id,
+        dateStr: normalizedDateStr,
+        timeSlots: requiredSlots,
+        createdAt: new Date(),
+        status: "confirmado",
+      });
+      
+      setNewFeedback("Agendamento salvo com sucesso!");
+      setNewService("");
+      setNewClientName("");
+      setNewDate(null);
+      setNewTimeSlot("");
+      
+      setTimeout(() => {
+        setIsCreating(false);
+        setNewFeedback("");
+      }, 2000);
+    } catch (error) {
+      console.error("Erro ao salvar agendamento:", error);
+      setNewFeedback("Erro ao salvar agendamento. Tente novamente.");
+    }
   };
 
   if (loading || !user || loadingAppointments) {
@@ -304,8 +704,14 @@ const BarberDashboard: React.FC = () => {
 
   return (
     <div className="p-4">
-      {/* O Header deve vir do layout global; se necessário, inclua aqui apenas uma vez */}
       <h1 className="text-2xl font-bold mb-4">Painel do Barbeiro</h1>
+
+      {/* Mensagem de feedback */}
+      {newFeedback && (
+        <div className="mb-4 p-2 bg-green-100 text-green-800 rounded text-center">
+          {newFeedback}
+        </div>
+      )}
 
       {/* Seção de Filtros para agendamentos existentes */}
       <div className="mb-4 flex flex-wrap gap-4 items-end">
@@ -353,9 +759,9 @@ const BarberDashboard: React.FC = () => {
                   required
                 >
                   <option value="">Selecione um serviço</option>
-                  {serviceOptions.map((s, idx) => (
-                    <option key={idx} value={s}>
-                      {s}
+                  {serviceOptions.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.name} ({s.duration} min)
                     </option>
                   ))}
                 </select>
@@ -390,32 +796,40 @@ const BarberDashboard: React.FC = () => {
                 <>
                   <h3 className="text-lg mt-4">Horários Disponíveis</h3>
                   <div className="grid grid-cols-1 gap-2 mt-2">
-                    {(["morning", "afternoon", "evening"] as (keyof typeof availableSlots)[]).map(
-                      (period) => (
+                    {Object.entries(newAvailableSlots).map(([period, slots]) => {
+                      if (slots.length === 0) return null;
+                      
+                      return (
                         <div key={period}>
-                          <h4 className="font-bold capitalize">{period}</h4>
+                          <h4 className="font-bold capitalize">
+                            {period === "manha" ? "manhã" : period === "tarde" ? "tarde" : "noite"}
+                          </h4>
                           <div className="flex flex-wrap gap-2 mt-1">
-                            {availableSlots[period]
-                              .filter((slot) => !newBookedSlots.includes(slot))
-                              .map((slot) => (
-                                <button
-                                  key={slot}
-                                  type="button"
-                                  onClick={() => setNewTimeSlot(slot)}
-                                  className={`px-3 py-1 border rounded ${
-                                    newTimeSlot === slot
-                                      ? "bg-blue-500 text-white"
-                                      : "bg-white text-black"
-                                  }`}
-                                >
-                                  {slot}
-                                </button>
-                              ))}
+                            {slots.map((slot) => (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => setNewTimeSlot(slot)}
+                                className={`px-3 py-1 border rounded ${
+                                  newTimeSlot === slot
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-white text-black"
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
                           </div>
                         </div>
-                      )
-                    )}
+                      );
+                    })}
                   </div>
+                  
+                  {(newAvailableSlots.manha.length === 0 && 
+                    newAvailableSlots.tarde.length === 0 && 
+                    newAvailableSlots.noite.length === 0) && (
+                    <p className="text-red-500 mt-2">Não há horários disponíveis para esta data</p>
+                  )}
                 </>
               )}
               <div className="flex justify-between mt-6">
@@ -426,11 +840,14 @@ const BarberDashboard: React.FC = () => {
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
+                <button 
+                  type="submit" 
+                  className="bg-blue-500 text-white px-4 py-2 rounded"
+                  disabled={!newDate || !newTimeSlot || !newService || !newClientName}
+                >
                   Confirmar Agendamento
                 </button>
               </div>
-              {newFeedback && <p className="mt-4 text-center">{newFeedback}</p>}
             </form>
           </div>
         ) : (
@@ -442,6 +859,135 @@ const BarberDashboard: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* Modal de Edição */}
+      {editingAppointment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white text-black p-6 rounded-lg shadow-lg max-w-2xl w-full max-h-90vh overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Editar Agendamento</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-1">Cliente</label>
+                <input
+                  type="text"
+                  value={editingAppointment.name}
+                  className="px-3 py-2 bg-gray-200 w-full rounded"
+                  readOnly
+                />
+              </div>
+              
+              <div>
+                <label className="block mb-1">Data</label>
+                <DatePicker
+                  selected={editingDate}
+                  onChange={(date: Date | null) => {
+                    setEditingDate(date);
+                    setEditingTimeSlot("");
+                  }}
+                  dateFormat="dd/MM/yyyy"
+                  className="px-3 py-2 border w-full rounded"
+                />
+              </div>
+              
+              <div>
+                <label className="block mb-1">Serviço</label>
+                <select
+                  value={editingService}
+                  onChange={(e) => setEditingService(e.target.value)}
+                  className="px-3 py-2 bg-white border w-full rounded"
+                >
+                  {serviceOptions.map((service) => (
+                    <option key={service.name} value={service.name}>
+                      {service.name} ({service.duration} min)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {editingDate && (
+                <div>
+                  <label className="block mb-1">Horário</label>
+                  <div className="space-y-2">
+                    {Object.entries(availableSlots).map(([period, slots]) => {
+                      if (slots.length === 0) return null;
+                      
+                      return (
+                        <div key={period}>
+                          <h4 className="font-medium capitalize">
+                            {period === "manha" ? "manhã" : period === "tarde" ? "tarde" : "noite"}
+                          </h4>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {slots.map((slot) => (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => setEditingTimeSlot(slot)}
+                                className={`px-3 py-1 border rounded ${
+                                  editingTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {(availableSlots.manha.length === 0 && 
+                    availableSlots.tarde.length === 0 && 
+                    availableSlots.noite.length === 0) && (
+                    <p className="text-red-500 mt-2">Não há horários disponíveis para esta data</p>
+                  )}
+                </div>
+              )}
+              
+              <div>
+                <label className="block mb-1">Status</label>
+                <select
+                  value={editingAppointment.status}
+                  onChange={(e) =>
+                    setEditingAppointment({
+                      ...editingAppointment,
+                      status: e.target.value,
+                    })
+                  }
+                  className="px-3 py-2 bg-white border w-full rounded"
+                >
+                  <option value="confirmado">Confirmado</option>
+                  <option value="pendente">Pendente</option>
+                  <option value="cancelado">Cancelado</option>
+                  <option value="finalizado">Finalizado</option>
+                </select>
+              </div>
+              
+              {editFeedback && (
+                <div className="p-2 bg-red-100 text-red-700 rounded">
+                  {editFeedback}
+                </div>
+              )}
+              
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  disabled={!editingDate || !editingTimeSlot || !editingService}
+                >
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Listagem e Edição dos Agendamentos Existentes */}
       {filteredAppointments.length === 0 ? (
@@ -461,121 +1007,36 @@ const BarberDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredAppointments.map((app) =>
-                editingAppointment && editingAppointment.id === app.id ? (
-                  <tr key={app.id}>
-                    <td className="px-4 py-2 border">
-                      <input
-                        type="date"
-                        value={editingAppointment.dateStr}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            dateStr: e.target.value,
-                          })
-                        }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      />
-                    </td>
-                    <td className="px-4 py-2 border">
-                      <input
-                        type="time"
-                        value={editingAppointment.timeSlot}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            timeSlot: e.target.value,
-                          })
-                        }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
-                      />
-                    </td>
-                    <td className="px-4 py-2 border">
-                      <select
-                        value={editingAppointment.service}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            service: e.target.value,
-                          })
-                        }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
+              {sortedAppointments.map((app) => (
+                <tr key={app.id}>
+                  <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
+                  <td className="px-4 py-2 border">{app.timeSlot}</td>
+                  <td className="px-4 py-2 border">{app.service}</td>
+                  <td className="px-4 py-2 border">{app.barber}</td>
+                  <td className="px-4 py-2 border">{app.name}</td>
+                  <td className="px-4 py-2 border">{app.status}</td>
+                  <td className="px-4 py-2 border">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleStartEditing(app)}
+                        className="bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600 transition"
                       >
-                        {serviceOptions.map((s, idx) => (
-                          <option key={idx} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2 border">{editingAppointment.barber}</td>
-                    <td className="px-4 py-2 border">{app.name}</td>
-                    <td className="px-4 py-2 border">
-                      <select
-                        value={editingAppointment.status}
-                        onChange={(e) =>
-                          setEditingAppointment({
-                            ...editingAppointment,
-                            status: e.target.value,
-                          })
-                        }
-                        className="px-2 py-1 rounded text-black bg-gray-100"
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleCancelAppointment(app)}
+                        className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
                       >
-                        <option value="confirmado">Confirmado</option>
-                        <option value="pendente">Pendente</option>
-                        <option value="cancelado">Cancelado</option>
-                        <option value="finalizado">Finalizado</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-2 border">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={handleSaveEdit}
-                          className="bg-green-500 px-3 py-1 rounded hover:bg-green-600 transition"
-                        >
-                          Salvar
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="bg-gray-500 px-3 py-1 rounded hover:bg-gray-600 transition"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={app.id}>
-                    <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
-                    <td className="px-4 py-2 border">{app.timeSlot}</td>
-                    <td className="px-4 py-2 border">{app.service}</td>
-                    <td className="px-4 py-2 border">{app.barber}</td>
-                    <td className="px-4 py-2 border">{app.name}</td>
-                    <td className="px-4 py-2 border">{app.status}</td>
-                    <td className="px-4 py-2 border">
-                      <div className="flex">
-                        <button
-                          onClick={() => handleStartEditing(app)}
-                          className="bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600 transition"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleCancelAppointment(app)}
-                          className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
-                        >
-                          Cancelar Agendamento
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              )}
+                        Cancelar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
-      {/* Footer removido para evitar duplicidade, pois o layout global já o fornece */}
     </div>
   );
 };
