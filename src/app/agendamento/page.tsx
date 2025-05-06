@@ -95,11 +95,11 @@ function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite:
 // ----------------------
 
 // Interface para configuração de um dia
-interface DayConfig {
+export interface DayConfig {
   open?: string;
+  close?: string;
   breakStart?: string;
   breakEnd?: string;
-  close?: string;
   active: boolean;
 }
 
@@ -112,6 +112,17 @@ export interface OperatingHours {
   quinta: DayConfig;
   sexta: DayConfig;
   sábado: DayConfig;
+}
+
+export interface Exception {
+  id?: string;
+  date: string;
+  status: 'blocked' | 'available';
+  message?: string;
+  open?: string;
+  close?: string;
+  breakStart?: string;
+  breakEnd?: string;
 }
 
 // Configuração global padrão (usada se necessário)

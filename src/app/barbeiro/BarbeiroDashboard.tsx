@@ -27,6 +27,18 @@ interface ExtendedUserWithName extends ExtendedUser {
 }
 import { useOperatingHours } from "@/hooks/useOperatingHours";
 import errorMessages from "@/utils/errorMessages";
+import { DayConfig, OperatingHours, Exception } from '@/types/common';
+
+// Adicione esta constante no início do arquivo, após as importações:
+const defaultOperatingHours: OperatingHours = {
+  domingo: { active: false },
+  segunda: { active: true, open: '08:00', close: '18:00' },
+  terça: { active: true, open: '08:00', close: '18:00' },
+  quarta: { active: true, open: '08:00', close: '18:00' },
+  quinta: { active: true, open: '08:00', close: '18:00' },
+  sexta: { active: true, open: '08:00', close: '18:00' },
+  sábado: { active: true, open: '08:00', close: '13:00' }
+};
 
 // Função auxiliar para converter "YYYY-MM-DD" para "DD/MM/YYYY"
 const formatDate = (dateStr: string): string => {
@@ -97,26 +109,6 @@ function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite:
   const tarde = slots.filter((slot) => slot >= "12:00" && slot < "17:00");
   const noite = slots.filter((slot) => slot >= "17:00");
   return { manha, tarde, noite };
-}
-
-// Interface para configuração de um dia
-interface DayConfig {
-  open?: string;
-  breakStart?: string;
-  breakEnd?: string;
-  close?: string;
-  active: boolean;
-}
-
-// OperatingHours interface
-interface OperatingHours {
-  domingo: DayConfig;
-  segunda: DayConfig;
-  terça: DayConfig;
-  quarta: DayConfig;
-  quinta: DayConfig;
-  sexta: DayConfig;
-  sábado: DayConfig;
 }
 
 // Interface para agendamento
@@ -329,7 +321,7 @@ const BarberDashboard: React.FC = () => {
     const dayConfig = getEffectiveDayConfig(
       barberInfo,
       newDate,
-      operatingHours || {},
+      operatingHours || defaultOperatingHours,
       exceptions || []
     );
     
@@ -396,7 +388,7 @@ const BarberDashboard: React.FC = () => {
     const dayConfig = getEffectiveDayConfig(
       barberInfo,
       editingDate,
-      operatingHours || {},
+      operatingHours || defaultOperatingHours,
       exceptions || []
     );
     
