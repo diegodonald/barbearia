@@ -26,6 +26,7 @@ interface ExtendedUserWithName extends ExtendedUser {
   exceptions?: any[];
 }
 import { useOperatingHours } from "@/hooks/useOperatingHours";
+import errorMessages from "@/utils/errorMessages";
 
 // Função auxiliar para converter "YYYY-MM-DD" para "DD/MM/YYYY"
 const formatDate = (dateStr: string): string => {
@@ -535,17 +536,26 @@ const BarberDashboard: React.FC = () => {
       
       const startIndex = allSlots.indexOf(editingTimeSlot);
       if (startIndex === -1) {
-        setEditFeedback("Horário inicial não está disponível");
+        setEditFeedback(errorMessages.slotNotAvailable); // Atualizado
         return;
       }
       
       if (startIndex + slotsNeeded > allSlots.length) {
-        setEditFeedback("Não há slots suficientes para completar este serviço");
+        setEditFeedback(errorMessages.serviceExceedsClosing);
         return;
       }
       
       // Verificar se os slots são consecutivos
       const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
+      
+      // Verificar se algum slot está ocupado
+      const barberBooked = bookedSlots || [];
+      if (requiredSlots.some(slot => barberBooked.includes(slot))) {
+        setEditFeedback(errorMessages.slotAlreadyBooked);
+        return;
+      }
+      
+      // Verificar se os slots cruzam intervalo
       for (let i = 1; i < requiredSlots.length; i++) {
         const prevSlot = requiredSlots[i-1];
         const currSlot = requiredSlots[i];
@@ -557,7 +567,7 @@ const BarberDashboard: React.FC = () => {
         const currTotalMins = currHour * 60 + currMin;
         
         if (currTotalMins - prevTotalMins !== 30) {
-          setEditFeedback("Os horários não são consecutivos (pode haver um intervalo entre eles)");
+          setEditFeedback(errorMessages.serviceCrossesBreak);
           return;
         }
       }
@@ -639,17 +649,25 @@ const BarberDashboard: React.FC = () => {
       
       const startIndex = allSlots.indexOf(newTimeSlot);
       if (startIndex === -1) {
-        setNewFeedback("Horário inicial não está disponível");
+        setNewFeedback(errorMessages.slotNotAvailable);
         return;
       }
       
       if (startIndex + slotsNeeded > allSlots.length) {
-        setNewFeedback("Não há slots suficientes para completar este serviço");
+        setNewFeedback(errorMessages.insufficientSlots);
         return;
       }
       
       // Verificar se os slots são consecutivos
       const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
+      
+      // Verificar se algum slot está ocupado
+      if (requiredSlots.some(slot => bookedSlots.includes(slot))) {
+        setNewFeedback(errorMessages.slotAlreadyBooked);
+        return;
+      }
+      
+      // Verificar se os slots cruzam intervalo
       for (let i = 1; i < requiredSlots.length; i++) {
         const prevSlot = requiredSlots[i-1];
         const currSlot = requiredSlots[i];
@@ -661,7 +679,7 @@ const BarberDashboard: React.FC = () => {
         const currTotalMins = currHour * 60 + currMin;
         
         if (currTotalMins - prevTotalMins !== 30) {
-          setNewFeedback("Os horários não são consecutivos (pode haver um intervalo entre eles)");
+          setNewFeedback(errorMessages.serviceCrossesBreak);
           return;
         }
       }
