@@ -1,67 +1,68 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import useAuth from '@/hooks/useAuth';
-import { DayConfig, OperatingHours, Exception } from '@/types/common';
+import { OperatingHours, Exception, DayConfig } from '@/types/common';
+
+// Configuração global padrão
+const defaultOperatingHours: OperatingHours = {
+  domingo: { active: false },
+  segunda: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
+  terça: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
+  quarta: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
+  quinta: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
+  sexta: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
+  sábado: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '14:00' }
+};
 
 export function useOperatingHours(barberId?: string) {
-  const [horarios, setHorarios] = useState<OperatingHours | null>(null);
+  const { user } = useAuth();
+  const [operatingHours, setHorarios] = useState<OperatingHours | null>(null);
   const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
 
   useEffect(() => {
-    async function fetchOperatingHours() {
+    // Determinar qual documento de horários carregar
+    const horariosRef = barberId
+      ? doc(db, "horarios", barberId)
+      : doc(db, "configuracoes", "horarios");
+    
+    const fetchHorarios = async () => {
       try {
-        let horariosDocRef;
-        let exceptionsCollectionRef;
-        
-        if (barberId) {
-          // Buscar horários de um barbeiro específico
-          horariosDocRef = doc(db, 'horarios', barberId);
-          exceptionsCollectionRef = collection(db, 'excecoes', barberId, 'datas');
-        } else {
-          // Buscar horários globais
-          horariosDocRef = doc(db, 'configuracoes', 'horarios');
-          exceptionsCollectionRef = collection(db, 'configuracoes', 'excecoes', 'datas');
-        }
-        
-        const docSnap = await getDoc(horariosDocRef);
-        
+        const docSnap = await getDoc(horariosRef);
         if (docSnap.exists()) {
           setHorarios(docSnap.data() as OperatingHours);
         } else {
-          // Se não encontrar horários específicos ou globais, criar um padrão vazio
-          setHorarios({
-            domingo: { active: false },
-            segunda: { active: true, open: '08:00', close: '18:00' },
-            terça: { active: true, open: '08:00', close: '18:00' },
-            quarta: { active: true, open: '08:00', close: '18:00' },
-            quinta: { active: true, open: '08:00', close: '18:00' },
-            sexta: { active: true, open: '08:00', close: '18:00' },
-            sábado: { active: true, open: '08:00', close: '14:00' }
-          });
+          setHorarios(defaultOperatingHours);
         }
-        
-        // Buscar exceções
-        const exceptionsSnapshot = await getDocs(exceptionsCollectionRef);
-        const exceptionsData = exceptionsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Exception[];
-        
-        setExceptions(exceptionsData);
-        setError(null);
+        setLoading(false);
       } catch (err) {
         console.error('Erro ao carregar horários:', err);
-        setError('Falha ao carregar horários de funcionamento.');
-      } finally {
+        setError('Falha ao carregar horários.');
         setLoading(false);
       }
-    }
+    };
 
-    fetchOperatingHours();
+    // Carregar exceções (da subcoleção correta)
+    const exceptionsRef = barberId
+      ? collection(db, "excecoes", barberId, "datas")
+      : collection(db, "configuracoes", "excecoes", "datas");
+    
+    const unsubscribe = onSnapshot(exceptionsRef, (snapshot) => {
+      const exceptionsList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Exception));
+      
+      setExceptions(exceptionsList);
+    }, (err) => {
+      console.error('Erro ao carregar exceções:', err);
+      setError('Falha ao carregar exceções.');
+    });
+
+    fetchHorarios();
+    return () => unsubscribe();
   }, [barberId]);
 
   async function updateHorarios(newHorarios: OperatingHours) {
@@ -70,13 +71,13 @@ export function useOperatingHours(barberId?: string) {
         return { success: false, error: 'Usuário não autenticado.' };
       }
       
-      if (barberId && user.role !== 'admin' && (!user.uid || user.uid !== barberId)) {
+      if (barberId && user.role !== 'admin' && user.uid !== barberId) {
         return { success: false, error: 'Permissão negada.' };
       }
       
-      const docRef = barberId 
-        ? doc(db, 'horarios', barberId)
-        : doc(db, 'configuracoes', 'horarios');
+      const docRef = barberId
+        ? doc(db, "horarios", barberId)
+        : doc(db, "configuracoes", "horarios");
       
       await setDoc(docRef, newHorarios);
       setHorarios(newHorarios);
@@ -97,15 +98,15 @@ export function useOperatingHours(barberId?: string) {
         return { success: false, error: 'Permissão negada.' };
       }
       
-      const collectionRef = barberId 
+      const collRef = barberId
         ? collection(db, 'excecoes', barberId, 'datas')
         : collection(db, 'configuracoes', 'excecoes', 'datas');
       
-      // Usar a data como ID do documento
-      await setDoc(doc(collectionRef, exception.date), exception);
+      // Usar a data como ID
+      const docId = exception.date;
+      await setDoc(doc(collRef, docId), exception);
       
-      // Atualizar o estado local
-      setExceptions([...exceptions, { ...exception, id: exception.date }]);
+      setExceptions([...exceptions, { ...exception, id: docId }]);
       return { success: true };
     } catch (err) {
       console.error('Erro ao adicionar exceção:', err);
@@ -124,8 +125,8 @@ export function useOperatingHours(barberId?: string) {
       }
       
       const docRef = barberId 
-        ? doc(db, 'excecoes', barberId, 'datas', id)
-        : doc(db, 'configuracoes', 'excecoes', 'datas', id);
+        ? doc(db, 'usuarios', barberId, 'exceptions', id)
+        : doc(db, 'configuracoes', 'operatingHours', 'exceptions', id);
       
       await updateDoc(docRef, data);
       
@@ -151,13 +152,11 @@ export function useOperatingHours(barberId?: string) {
         return { success: false, error: 'Permissão negada.' };
       }
       
-      const docRef = barberId 
+      const docRef = barberId
         ? doc(db, 'excecoes', barberId, 'datas', id)
         : doc(db, 'configuracoes', 'excecoes', 'datas', id);
       
       await deleteDoc(docRef);
-      
-      // Atualizar o estado local
       setExceptions(exceptions.filter(exc => exc.id !== id));
       return { success: true };
     } catch (err) {
@@ -166,12 +165,12 @@ export function useOperatingHours(barberId?: string) {
     }
   }
 
-  return {
-    operatingHours: horarios,  // Mudar "horarios" para "operatingHours"
-    exceptions,
-    loading,
-    error,
-    updateHorarios,
+  return { 
+    operatingHours, 
+    exceptions, 
+    loading, 
+    error, 
+    updateHorarios, 
     addException,
     updateException,
     deleteException

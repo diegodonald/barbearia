@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import "react-datepicker/dist/react-datepicker.css";
 
@@ -79,71 +79,91 @@ const BarbeirosConfig: React.FC = () => {
     fetchBarbers();
   }, []);
 
-  // Carrega a configuração individual do barbeiro selecionado
+  // Modificação no useEffect que carrega os dados do barbeiro
   useEffect(() => {
     if (!selectedBarberId) return;
     setLoading(true);
-    const docRef = doc(db, "usuarios", selectedBarberId);
-    getDoc(docRef)
-      .then((docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          // Certifique-se de utilizar apenas a estrutura correta em "horarios"
-          if (data.horarios) {
-            setBarberConfig({
-              horarios: data.horarios,
-              exceptions: data.exceptions || [],
-            });
-          } else {
-            // Cria o objeto padrão se não houver configuração
-            const defaultConfig: BarberConfig = {
-              horarios: {
-                segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-                terça: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-                quarta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-                quinta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-                sexta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-                sábado: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-                domingo: { active: false },
-              },
-              exceptions: [],
-            };
-            setBarberConfig(defaultConfig);
-          }
-        }
+    
+    // 1. Carregar os horários da coleção horarios/{barberId}
+    const horarioDocRef = doc(db, "horarios", selectedBarberId);
+    
+    // 2. Carregar as exceções da subcoleção excecoes/{barberId}/datas
+    const excecoesDatasRef = collection(db, "excecoes", selectedBarberId, "datas");
+    
+    Promise.all([
+      getDoc(horarioDocRef),
+      getDocs(excecoesDatasRef)
+    ])
+      .then(([horariosSnapshot, excecoesSnapshot]) => {
+        // Processar os horários
+        const horarios = horariosSnapshot.exists() 
+          ? horariosSnapshot.data()
+          : createDefaultSchedule();
+        
+        // Processar as exceções
+        const exceptions = excecoesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        // Configurar o estado
+        setBarberConfig({
+          horarios,
+          exceptions
+        });
       })
-      .catch((error) => {
-        console.error("Erro ao carregar a configuração do barbeiro:", error);
+      .catch(error => {
+        console.error("Erro ao carregar configurações:", error);
       })
       .finally(() => {
         setLoading(false);
       });
   }, [selectedBarberId]);
 
-  // Função para salvar a configuração individual do barbeiro, utilizando a mesma lógica do módulo global
+  // Adicione esta função auxiliar fora do componente:
+  function createDefaultSchedule() {
+    return {
+      segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+      terça: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+      quarta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+      quinta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+      sexta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
+      sábado: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "14:00", active: true },
+      domingo: { active: false }
+    };
+  }
+
+  // Modificação na função saveConfig para usar a estrutura correta de coleções
   const saveConfig = async () => {
     if (!selectedBarberId || !barberConfig) return;
     try {
-      const docRef = doc(db, "usuarios", selectedBarberId);
-      // Obtemos os dados atuais para preservar os demais campos
-      const docSnap = await getDoc(docRef);
-      const userData = docSnap.exists() ? docSnap.data() : {};
-      // Removemos a propriedade "horarios" existente para evitar duplicação
-      if (userData.horarios) {
-        delete userData.horarios;
-      }
+      // 1. Salvar os horários na coleção horarios/{barberId}
+      const horarioDocRef = doc(db, "horarios", selectedBarberId);
       await setDoc(
-        docRef,
-        {
-          ...userData, // Preserva os outros campos do documento
-          horarios: barberConfig.horarios, // sobrescreve completamente o campo "horarios"
-          exceptions: barberConfig.exceptions || []
-        },
-        { merge: false }
+        horarioDocRef,
+        barberConfig.horarios,
+        { merge: true }
       );
+      
+      // 2. Salvar as exceções na subcoleção excecoes/{barberId}/datas
+      if (barberConfig.exceptions && barberConfig.exceptions.length > 0) {
+        // Primeiro, remover exceções existentes
+        const excecoesDatasRef = collection(db, "excecoes", selectedBarberId, "datas");
+        const snapshot = await getDocs(excecoesDatasRef);
+        const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+        await Promise.all(deletePromises);
+        
+        // Depois, adicionar as novas exceções
+        const addPromises = barberConfig.exceptions.map(exception => {
+          const docId = exception.date; // Usar a data como ID do documento
+          return setDoc(doc(db, "excecoes", selectedBarberId, "datas", docId), exception);
+        });
+        await Promise.all(addPromises);
+      }
+      
       setFeedback("Configurações salvas com sucesso!");
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao salvar configurações:", error);
       setFeedback("Erro ao salvar configurações. Tente novamente.");
     }
   };

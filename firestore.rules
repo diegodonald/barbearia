@@ -34,6 +34,12 @@ service cloud.firestore {
       allow update: if isOwner(userId) || isAdmin();
       // Apenas admins podem criar e excluir usuários via Firestore
       allow create, delete: if isAdmin();
+      
+      // Adicionar acesso às sub-coleções
+      match /exceptions/{exceptionId} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId) || isAdmin();
+      }
     }
     
     match /barbeiros/{barberId} {
@@ -76,26 +82,24 @@ service cloud.firestore {
     }
     
     match /agendamentos/{agendamentoId} {
-      // Clientes podem ler seus próprios agendamentos
+      // Correção: mudar userId para uid para consistência
       allow read: if isAuthenticated() && 
-        (request.auth.uid == resource.data.userId || isAdmin() ||
+        (request.auth.uid == resource.data.uid || isAdmin() ||
         (isBarber() && resource.data.barberId != null && 
-         exists(/databases/$(database)/documents/barbeiros/$(resource.data.barberId)) &&
-         get(/databases/$(database)/documents/barbeiros/$(resource.data.barberId)).data.userId == request.auth.uid));
+         request.auth.uid == resource.data.barberId));
       
       // Clientes podem criar agendamentos
       allow create: if isAuthenticated();
       
       // Clientes podem atualizar seus próprios agendamentos
       allow update: if isAuthenticated() && 
-        (request.auth.uid == resource.data.userId || isAdmin() ||
+        (request.auth.uid == resource.data.uid || isAdmin() ||
         (isBarber() && resource.data.barberId != null && 
-         exists(/databases/$(database)/documents/barbeiros/$(resource.data.barberId)) &&
-         get(/databases/$(database)/documents/barbeiros/$(resource.data.barberId)).data.userId == request.auth.uid));
+         request.auth.uid == resource.data.barberId));
       
       // Apenas clientes e admins podem deletar agendamentos
       allow delete: if isAuthenticated() && 
-        (request.auth.uid == resource.data.userId || isAdmin());
+        (request.auth.uid == resource.data.uid || isAdmin());
     }
     
     match /configuracoes/{configId} {
@@ -104,7 +108,7 @@ service cloud.firestore {
       // Apenas admins podem modificar as configurações globais
       allow write: if isAdmin();
       
-      match /excecoes/datas/{dataId} {
+      match /operatingHours/exceptions/{dataId} {
         // Todos podem ler as exceções globais
         allow read: if isAuthenticated();
         // Apenas admins podem modificar as exceções globais

@@ -3,21 +3,10 @@
 import React, { useEffect, useState } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  updateDoc,
-  deleteDoc,
-  doc,
-  getDocs,
-  addDoc,
-} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { ExtendedUser } from "@/hooks/useAuth";
+import { ExtendedUser } from "@/types/ExtendedUser";
 
 // Extend the ExtendedUser type to include the 'name' property
 interface ExtendedUserWithName extends ExtendedUser {
@@ -28,6 +17,9 @@ interface ExtendedUserWithName extends ExtendedUser {
 import { useOperatingHours } from "@/hooks/useOperatingHours";
 import errorMessages from "@/utils/errorMessages";
 import { DayConfig, OperatingHours, Exception } from '@/types/common';
+import { useAgendamentos } from "@/hooks/useAgendamentos";
+import { useServicos } from '@/hooks/useServicos';
+import { useAgendamentosOperations } from '@/hooks/useAgendamentosOperations';
 
 // Adicione esta constante no início do arquivo, após as importações:
 const defaultOperatingHours: OperatingHours = {
@@ -241,12 +233,49 @@ const BarberDashboard: React.FC = () => {
   useEffect(() => {
     if (!loading && user) {
       const userData = user as ExtendedUserWithName;
-      setBarberInfo({ 
-        id: user.uid, 
-        name: userData.name || "", 
-        horarios: userData.horarios || null,
-        exceptions: userData.exceptions || []
-      });
+      
+      // Buscar dados do barbeiro na coleção "barbeiros"
+      const fetchBarberInfo = async () => {
+        try {
+          const barberDocRef = doc(db, "barbeiros", user.uid);
+          const barberDocSnap = await getDoc(barberDocRef);
+          
+          if (barberDocSnap.exists()) {
+            // Buscar horários na coleção "horarios"
+            const horariosRef = doc(db, "horarios", user.uid);
+            const horariosSnap = await getDoc(horariosRef);
+            const horarios = horariosSnap.exists() ? horariosSnap.data() : null;
+            
+            // Buscar exceções
+            const excecoesRef = collection(db, "excecoes", user.uid, "datas");
+            const excecoesSnap = await getDocs(excecoesRef);
+            const exceptions = excecoesSnap.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            
+            // Configurar o objeto barberInfo
+            setBarberInfo({
+              id: user.uid,
+              name: barberDocSnap.data().name || userData.name || "",
+              horarios: horarios,
+              exceptions: exceptions
+            });
+          } else {
+            // Se não existir na coleção barbeiros, usar dados do usuário
+            setBarberInfo({
+              id: user.uid,
+              name: userData.name || "",
+              horarios: null,
+              exceptions: []
+            });
+          }
+        } catch (error) {
+          console.error("Erro ao buscar informações do barbeiro:", error);
+        }
+      };
+      
+      fetchBarberInfo();
     }
   }, [user, loading]);
 
@@ -258,58 +287,24 @@ const BarberDashboard: React.FC = () => {
     }
   }, [user, loading, router]);
 
-  // Busca dos agendamentos do barbeiro (filtrados pelo barberId)
-  useEffect(() => {
-    if (user) {
-      const q = query(
-        collection(db, "agendamentos"),
-        where("barberId", "==", user.uid)
-      );
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const appsData: Appointment[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data();
-          const timeSlotValue = data.timeSlot || (data.timeSlots ? data.timeSlots.join(" - ") : "");
-          return {
-            id: docSnap.id,
-            dateStr: data.dateStr,
-            timeSlot: timeSlotValue,
-            timeSlots: data.timeSlots || (data.timeSlot ? [data.timeSlot] : []),
-            service: data.service,
-            duration: data.duration || 30,
-            barber: data.barber,
-            barberId: data.barberId,
-            name: data.name,
-            status: data.status ? data.status : "confirmado",
-          };
-        });
-        setAppointments(appsData);
-        setLoadingAppointments(false);
-      });
-      return () => unsubscribe();
-    }
-  }, [user]);
+  const { agendamentos, loading: loadingAgendamentos } = useAgendamentos(undefined, user?.uid);
 
-  // Busca das opções de serviços a partir da coleção "servicos"
   useEffect(() => {
-    async function fetchServiceOptions() {
-      try {
-        const q = query(collection(db, "servicos"));
-        const snapshot = await getDocs(q);
-        const services = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            name: data.name,
-            duration: Number(data.duration),
-            value: Number(data.value),
-          };
-        });
-        setServiceOptions(services);
-      } catch (error) {
-        console.error("Erro ao buscar serviços:", error);
-      }
+    if (!loadingAgendamentos) {
+      setAppointments(agendamentos);
+      setLoadingAppointments(false);
     }
-    fetchServiceOptions();
-  }, []);
+  }, [agendamentos, loadingAgendamentos]);
+
+  const { servicos, loading: servicosLoading } = useServicos();
+
+  useEffect(() => {
+    if (!servicosLoading) {
+      setServiceOptions(servicos);
+    }
+  }, [servicos, servicosLoading]);
+
+  const { createAgendamento, updateAgendamento, deleteAgendamento } = useAgendamentosOperations();
 
   // Atualiza os horários ocupados para o novo agendamento
   useEffect(() => {
@@ -566,10 +561,10 @@ const BarberDashboard: React.FC = () => {
       
       const dateStr = getLocalDateString(editingDate);
       
-      await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
+      const result = await updateAgendamento(editingAppointment.id, {
         dateStr: dateStr,
         timeSlots: requiredSlots,
-        timeSlot: null,  // Limpa o campo antigo
+        timeSlot: null,
         service: editingService,
         duration: service.duration,
         barber: barberInfo.name,
@@ -577,9 +572,13 @@ const BarberDashboard: React.FC = () => {
         status: editingAppointment.status,
       });
       
-      handleCancelEdit();
-      setNewFeedback("Agendamento atualizado com sucesso!");
-      setTimeout(() => setNewFeedback(""), 3000);
+      if (result.success) {
+        handleCancelEdit();
+        setNewFeedback("Agendamento atualizado com sucesso!");
+        setTimeout(() => setNewFeedback(""), 3000);
+      } else {
+        setEditFeedback(result.error || "Erro ao atualizar agendamento");
+      }
     } catch (error) {
       console.error("Erro ao atualizar agendamento:", error);
       setEditFeedback("Erro ao salvar. Tente novamente.");
@@ -589,9 +588,13 @@ const BarberDashboard: React.FC = () => {
   const handleCancelAppointment = async (appt: Appointment) => {
     if (!confirm("Deseja realmente cancelar este agendamento?")) return;
     try {
-      await deleteDoc(doc(db, "agendamentos", appt.id));
-      setNewFeedback("Agendamento cancelado com sucesso!");
-      setTimeout(() => setNewFeedback(""), 3000);
+      const result = await deleteAgendamento(appt.id);
+      if (result.success) {
+        setNewFeedback("Agendamento cancelado com sucesso!");
+        setTimeout(() => setNewFeedback(""), 3000);
+      } else {
+        setNewFeedback("Erro ao cancelar agendamento: " + (result.error || ""));
+      }
     } catch (error) {
       console.error("Erro ao cancelar agendamento:", error);
       setNewFeedback("Erro ao cancelar agendamento. Tente novamente.");
@@ -678,8 +681,8 @@ const BarberDashboard: React.FC = () => {
       
       const normalizedDateStr = getLocalDateString(newDate);
       
-      await addDoc(collection(db, "agendamentos"), {
-        uid: barberInfo?.id, // Usando o ID do barbeiro como "proprietário" do agendamento
+      const result = await createAgendamento({
+        uid: barberInfo?.id,
         email: user?.email,
         name: newClientName,
         service: newService,
@@ -692,16 +695,20 @@ const BarberDashboard: React.FC = () => {
         status: "confirmado",
       });
       
-      setNewFeedback("Agendamento salvo com sucesso!");
-      setNewService("");
-      setNewClientName("");
-      setNewDate(null);
-      setNewTimeSlot("");
-      
-      setTimeout(() => {
-        setIsCreating(false);
-        setNewFeedback("");
-      }, 2000);
+      if (result.success) {
+        setNewFeedback("Agendamento salvo com sucesso!");
+        setNewService("");
+        setNewClientName("");
+        setNewDate(null);
+        setNewTimeSlot("");
+        
+        setTimeout(() => {
+          setIsCreating(false);
+          setNewFeedback("");
+        }, 2000);
+      } else {
+        setNewFeedback("Erro ao salvar agendamento: " + (result.error || ""));
+      }
     } catch (error) {
       console.error("Erro ao salvar agendamento:", error);
       setNewFeedback("Erro ao salvar agendamento. Tente novamente.");

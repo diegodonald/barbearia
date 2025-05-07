@@ -5,22 +5,13 @@ import { useRouter } from "next/navigation";
 import useAuth from "@/hooks/useAuth";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  updateDoc,
-  deleteDoc,
-  doc,
-  getDocs
-} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { ExtendedUser } from "@/hooks/useAuth";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
 import errorMessages from "@/utils/errorMessages";
+import { useAgendamentos } from "@/hooks/useAgendamentos";
 
 // Função auxiliar para converter datas em "YYYY-MM-DD" usando o horário local
 function getLocalDateString(date: Date): string {
@@ -229,36 +220,20 @@ const ClientAppointments: React.FC = () => {
     }
   }, [user, loading, router]);
 
-  // Busca os agendamentos do cliente (filtrando pelo campo "uid" do agendamento)
+  const { agendamentos, loading: loadingAgendamentos } = useAgendamentos(user?.uid);
+
   useEffect(() => {
-    if (user) {
-      const q = query(
-        collection(db, "agendamentos"),
-        where("uid", "==", user.uid)
-      );
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const apps: Appointment[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data();
-          const time = data.timeSlot || (data.timeSlots ? data.timeSlots.join(" - ") : "");
-          return {
-            id: docSnap.id,
-            dateStr: data.dateStr,
-            timeSlot: time,
-            timeSlots: data.timeSlots || (data.timeSlot ? [data.timeSlot] : []),
-            service: data.service,
-            duration: data.duration || 30,
-            barber: data.barber,
-            barberId: data.barberId,
-            name: data.name,
-            status: data.status ? data.status : "confirmado",
-          };
-        });
-        setAppointments(apps);
-        setLoadingAppointments(false);
-      });
-      return () => unsubscribe();
+    if (!loadingAgendamentos) {
+      // Map Agendamento to Appointment with guaranteed string for timeSlot
+      const mappedAppointments = agendamentos.map(ag => ({
+        ...ag,
+        timeSlot: ag.timeSlot || '', // Ensure timeSlot is never undefined
+      })) as Appointment[];
+      
+      setAppointments(mappedAppointments);
+      setLoadingAppointments(false);
     }
-  }, [user]);
+  }, [agendamentos, loadingAgendamentos]);
 
   // Busca as opções dinâmicas de serviços (da coleção "servicos")
   useEffect(() => {
@@ -282,21 +257,39 @@ const ClientAppointments: React.FC = () => {
     fetchServiceOptions();
   }, []);
 
-  // Busca as opções dinâmicas de barbeiros (da coleção "usuarios", onde role === "barber")
+  // Atualizar a função de buscar barbeiros:
   useEffect(() => {
     async function fetchBarberOptions() {
       try {
-        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
-        const snapshot = await getDocs(q);
-        const barbers = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
+        const barbeirosQuery = query(collection(db, "barbeiros"), where("active", "==", true));
+        const barbeirosSnapshot = await getDocs(barbeirosQuery);
+        
+        const barberPromises = barbeirosSnapshot.docs.map(async (doc) => {
+          const barberData = doc.data();
+          const barberId = doc.id;
+          
+          // Buscar horários na coleção "horarios"
+          const horariosRef = doc(db, "horarios", barberId);
+          const horariosSnap = await getDoc(horariosRef);
+          const horarios = horariosSnap.exists() ? horariosSnap.data() : null;
+          
+          // Buscar exceções
+          const excecoesRef = collection(db, "excecoes", barberId, "datas");
+          const excecoesSnap = await getDocs(excecoesRef);
+          const exceptions = excecoesSnap.docs.map(doc => ({
             id: doc.id,
-            name: data.name,
-            horarios: data.horarios || null,
-            exceptions: data.exceptions || []
+            ...doc.data()
+          }));
+          
+          return {
+            id: barberId,
+            name: barberData.name || "Sem nome",
+            horarios: horarios,
+            exceptions: exceptions
           };
         });
+        
+        const barbers = await Promise.all(barberPromises);
         setBarberOptions(barbers);
       } catch (error) {
         console.error("Erro ao buscar barbeiros:", error);

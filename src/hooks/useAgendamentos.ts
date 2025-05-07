@@ -1,226 +1,113 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, where, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import useAuth from '@/hooks/useAuth';
+import { ExtendedUser } from '@/types/common'; // Corrigir a importação se necessário
 
 export interface Agendamento {
-  id?: string;
-  userId: string;
-  barberId: string;
+  id: string;
   dateStr: string;
-  timeSlots: string[];
+  timeSlot?: string;
+  timeSlots?: string[];
+  duration?: number;
   service: string;
-  duration: number;
-  name?: string;
+  barber: string;
+  barberId: string;
+  name: string;
+  status: string;
+  uid: string;
   email?: string;
-  barber?: string;
-  status: 'confirmado' | 'cancelado' | 'concluido' | 'pendente';
   createdAt?: Date;
 }
-
-// Corrigir queries e verificação de nulos
 
 export function useAgendamentos(filtroUserId?: string, filtroBarberId?: string, filtroData?: string) {
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
-  
+
   useEffect(() => {
     if (!user) {
       setLoading(false);
+      setAgendamentos([]);
       return;
     }
-    
-    async function fetchAgendamentos() {
-      try {
-        // Construir a query base
-        const agendamentosRef = collection(db, 'agendamentos');
-        let currentQuery;
-        
-        // Aplicar filtros
-        if (filtroUserId) {
-          currentQuery = query(agendamentosRef, where('userId', '==', filtroUserId));
-        } else if (filtroBarberId) {
-          currentQuery = query(agendamentosRef, where('barberId', '==', filtroBarberId));
-        } else if (filtroData) {
-          currentQuery = query(agendamentosRef, where('dateStr', '==', filtroData));
-        } else {
-          // Se não houver filtros específicos, limitar por papel do usuário
-          if (user && user.role === 'user') {
-            currentQuery = query(agendamentosRef, where('userId', '==', user.uid));
-          } else if (user && user.role === 'barber') {
-            // Procurar o ID do barbeiro associado ao userId
-            const barbeirosRef = collection(db, 'barbeiros');
-            const barberQuery = query(barbeirosRef, where('userId', '==', user.uid));
-            const barberSnapshot = await getDocs(barberQuery);
-            
-            if (!barberSnapshot.empty) {
-              const barberId = barberSnapshot.docs[0].id;
-              currentQuery = query(agendamentosRef, where('barberId', '==', barberId));
-            } else {
-              currentQuery = query(agendamentosRef); // Query vazia, não mostrar nada
-            }
-          } else {
-            // Para admin ou caso não identificado, mostra todos os agendamentos
-            currentQuery = query(agendamentosRef);
-          }
-        }
-        
-        const snapshot = await getDocs(currentQuery);
-        const agendamentosData = await Promise.all(snapshot.docs.map(async docSnapshot => {
-          const data = docSnapshot.data();
+
+    try {
+      // Montamos a consulta base
+      let baseQuery = collection(db, 'agendamentos');
+      let constraints = [];
+
+      // Adicionamos filtros conforme os parâmetros
+      if (filtroUserId) {
+        constraints.push(where('uid', '==', filtroUserId));
+      }
+      
+      if (filtroBarberId) {
+        constraints.push(where('barberId', '==', filtroBarberId));
+      }
+
+      if (filtroData) {
+        constraints.push(where('dateStr', '==', filtroData));
+      }
+
+      // Se o usuário for cliente e não for fornecido um filtro específico de usuário,
+      // filtramos pelos próprios agendamentos
+      if (user.role === 'user' && !filtroUserId) {
+        constraints.push(where('uid', '==', user.uid));
+      }
+
+      // Se o usuário for barbeiro e não for fornecido um filtro específico de barbeiro,
+      // filtramos pelos agendamentos dele
+      if (user.role === 'barber' && !filtroBarberId && !filtroUserId) {
+        constraints.push(where('barberId', '==', user.uid));
+      }
+
+      // Ordenamos por data e depois por horário
+      constraints.push(orderBy('dateStr', 'asc'));
+      
+      // Aplicamos todos os filtros
+      const q = query(baseQuery, ...constraints);
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const dados: Agendamento[] = snapshot.docs.map((doc) => {
+          const data = doc.data();
           
-          // Enriquecer com nome do barbeiro se não estiver presente
-          let barberName = data.barber;
-          if (!barberName && data.barberId) {
-            try {
-              const barbeiroDoc = await getDoc(doc(db, 'barbeiros', data.barberId));
-              if (barbeiroDoc.exists()) {
-                barberName = barbeiroDoc.data().name;
-              }
-            } catch (error) {
-              console.error('Erro ao buscar dados do barbeiro:', error);
-            }
-          }
-          
-          // Enriquecer com nome do usuário se não estiver presente
-          let userName = data.name;
-          let userEmail = data.email;
-          if ((!userName || !userEmail) && data.userId) {
-            try {
-              const userDoc = await getDoc(doc(db, 'usuarios', data.userId));
-              if (userDoc.exists()) {
-                const userData = userDoc.data();
-                userName = userData.name || userName;
-                userEmail = userData.email || userEmail;
-              }
-            } catch (error) {
-              console.error('Erro ao buscar dados do usuário:', error);
-            }
-          }
+          // Normalizamos os dados para garantir consistência
+          const timeSlot = data.timeSlot || (data.timeSlots ? data.timeSlots.join(' - ') : '');
           
           return {
-            id: docSnapshot.id,
-            ...data,
-            barber: barberName || 'Barbeiro não encontrado',
-            name: userName || 'Cliente não encontrado',
-            email: userEmail || 'Email não encontrado'
-          } as Agendamento;
-        }));
+            id: doc.id,
+            dateStr: data.dateStr,
+            timeSlot: timeSlot,
+            timeSlots: data.timeSlots || (data.timeSlot ? [data.timeSlot] : []),
+            duration: data.duration || 30,
+            service: data.service,
+            barber: data.barber,
+            barberId: data.barberId || '',
+            name: data.name,
+            status: data.status || 'confirmado',
+            uid: data.uid,
+            email: data.email,
+            createdAt: data.createdAt ? new Date(data.createdAt.toDate()) : undefined
+          };
+        });
         
-        setAgendamentos(agendamentosData);
-        setError(null);
-      } catch (err: any) {
-        console.error('Erro ao buscar agendamentos:', err);
-        setError('Falha ao carregar agendamentos: ' + (err.message || 'Erro desconhecido'));
-      } finally {
+        setAgendamentos(dados);
         setLoading(false);
-      }
+      }, (err) => {
+        console.error('Erro ao carregar agendamentos:', err);
+        setError('Não foi possível carregar os agendamentos.');
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (err) {
+      console.error('Erro ao configurar listener de agendamentos:', err);
+      setError('Erro ao configurar busca de agendamentos.');
+      setLoading(false);
     }
-    
-    fetchAgendamentos();
   }, [user, filtroUserId, filtroBarberId, filtroData]);
-  
-  async function criarAgendamento(dados: Omit<Agendamento, 'id'>) {
-    try {
-      if (!user) {
-        return { success: false, error: 'Usuário não autenticado.' };
-      }
-      
-      // Adicionar timestamp de criação
-      const dadosCompletos = {
-        ...dados,
-        createdAt: new Date()
-      };
-      
-      const docRef = await addDoc(collection(db, 'agendamentos'), dadosCompletos);
-      
-      // Atualizar o estado local
-      setAgendamentos([...agendamentos, { ...dadosCompletos, id: docRef.id }]);
-      
-      return { success: true, id: docRef.id };
-    } catch (err) {
-      console.error('Erro ao criar agendamento:', err);
-      return { success: false, error: 'Falha ao criar agendamento.' };
-    }
-  }
-  
-  async function atualizarAgendamento(id: string, dados: Partial<Agendamento>) {
-    try {
-      if (!user) {
-        return { success: false, error: 'Usuário não autenticado.' };
-      }
-      
-      // Verificar permissões
-      const agendamento = agendamentos.find(a => a.id === id);
-      if (!agendamento) {
-        return { success: false, error: 'Agendamento não encontrado.' };
-      }
-      
-      if (user.role !== 'admin' && user.uid !== agendamento.userId) {
-        // Verificar se o usuário é o barbeiro deste agendamento
-        if (user.role === 'barber') {
-          const barberSnapshot = await getDocs(
-            query(collection(db, 'barbeiros'), where('userId', '==', user.uid))
-          );
-          
-          if (barberSnapshot.empty || barberSnapshot.docs[0].id !== agendamento.barberId) {
-            return { success: false, error: 'Permissão negada.' };
-          }
-        } else {
-          return { success: false, error: 'Permissão negada.' };
-        }
-      }
-      
-      await updateDoc(doc(db, 'agendamentos', id), dados);
-      
-      // Atualizar o estado local
-      setAgendamentos(
-        agendamentos.map(a => a.id === id ? { ...a, ...dados } : a)
-      );
-      
-      return { success: true };
-    } catch (err) {
-      console.error('Erro ao atualizar agendamento:', err);
-      return { success: false, error: 'Falha ao atualizar agendamento.' };
-    }
-  }
-  
-  async function excluirAgendamento(id: string) {
-    try {
-      if (!user) {
-        return { success: false, error: 'Usuário não autenticado.' };
-      }
-      
-      // Verificar permissões
-      const agendamento = agendamentos.find(a => a.id === id);
-      if (!agendamento) {
-        return { success: false, error: 'Agendamento não encontrado.' };
-      }
-      
-      if (user.role !== 'admin' && user.uid !== agendamento.userId) {
-        return { success: false, error: 'Permissão negada.' };
-      }
-      
-      await deleteDoc(doc(db, 'agendamentos', id));
-      
-      // Atualizar o estado local
-      setAgendamentos(agendamentos.filter(a => a.id !== id));
-      
-      return { success: true };
-    } catch (err) {
-      console.error('Erro ao excluir agendamento:', err);
-      return { success: false, error: 'Falha ao excluir agendamento.' };
-    }
-  }
-  
-  return {
-    agendamentos,
-    loading,
-    error,
-    criarAgendamento,
-    atualizarAgendamento,
-    excluirAgendamento
-  };
+
+  return { agendamentos, loading, error };
 }

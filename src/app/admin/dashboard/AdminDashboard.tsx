@@ -18,16 +18,13 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
-import { OperatingHours } from "@/app/agendamento/page";
+import { OperatingHours } from "@/types/common";
 import errorMessages from "@/utils/errorMessages";
+import { useAgendamentos } from '@/hooks/useAgendamentos';
+import { useBarbeiros } from '@/hooks/useBarbeiros';
+import { useServicos } from '@/hooks/useServicos';
+import { useAgendamentosOperations } from '@/hooks/useAgendamentosOperations';
 
-// Reutilizando funções de utilidade do agendamento
-function getLocalDateString(date: Date): string {
-  const year = date.getFullYear();
-  const month = ("0" + (date.getMonth() + 1)).slice(-2);
-  const day = ("0" + date.getDate()).slice(-2);
-  return `${year}-${month}-${day}`;
-}
 
 function getDayName(date: Date): keyof OperatingHours {
   const days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
@@ -129,6 +126,37 @@ const AdminDashboard: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(true);
 
+  // Substitua o uso do hook local pelo novo hook global
+  const { agendamentos, loading: loadingAgendamentos } = useAgendamentos();
+
+  // Atualize o estado com os dados do hook
+  useEffect(() => {
+    if (!loadingAgendamentos) {
+      setAppointments(agendamentos);
+      setLoadingAppointments(false);
+    }
+  }, [agendamentos, loadingAgendamentos]);
+
+  // Substitua o código que busca serviços
+  const { servicos, loading: servicosLoading } = useServicos();
+  
+  useEffect(() => {
+    if (!servicosLoading) {
+      setServiceOptions(servicos);
+    }
+  }, [servicos, servicosLoading]);
+
+  // Substitua o código que busca barbeiros
+  const { barbeiros, loading: barbeirosLoading } = useBarbeiros();
+  
+  useEffect(() => {
+    if (!barbeirosLoading) {
+      setBarberOptions(barbeiros);
+    }
+  }, [barbeiros, barbeirosLoading]);
+
+  const { updateAgendamento, deleteAgendamento } = useAgendamentosOperations();
+
   // Estados dos filtros
   const [filterDate, setFilterDate] = useState<string>("");
   const [filterBarber, setFilterBarber] = useState<string>("");
@@ -160,79 +188,6 @@ const AdminDashboard: React.FC = () => {
       }
     }
   }, [loading, user, router]);
-
-  // Busca agendamentos
-  useEffect(() => {
-    const q = query(collection(db, "agendamentos"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const appsData: Appointment[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        // Tenta ler timeSlot; se não existir, utiliza timeSlots (juntados por " - ")
-        const time =
-          data.timeSlot || (data.timeSlots ? data.timeSlots.join(" - ") : "");
-        return {
-          id: docSnap.id,
-          dateStr: data.dateStr,
-          timeSlot: time,
-          timeSlots: data.timeSlots || (data.timeSlot ? [data.timeSlot] : []),
-          duration: data.duration || 30,
-          service: data.service,
-          barber: data.barber,
-          barberId: data.barberId || "",
-          name: data.name,
-          status: data.status ? data.status : "confirmado",
-        };
-      });
-      setAppointments(appsData);
-      setLoadingAppointments(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Busca as opções de serviços a partir da coleção "servicos"
-  useEffect(() => {
-    const fetchServiceOptions = async () => {
-      try {
-        const q = query(collection(db, "servicos"));
-        const snapshot = await getDocs(q);
-        const services = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            name: data.name,
-            duration: Number(data.duration),
-            value: Number(data.value),
-          };
-        });
-        setServiceOptions(services);
-      } catch (error) {
-        console.error("Erro ao buscar serviços:", error);
-      }
-    };
-    fetchServiceOptions();
-  }, []);
-
-  // Busca as opções dos barbeiros (usuários com role "barber")
-  useEffect(() => {
-    const fetchBarberOptions = async () => {
-      try {
-        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
-        const snapshot = await getDocs(q);
-        const barbers = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name,
-            horarios: data.horarios || null,
-            exceptions: data.exceptions || []
-          };
-        });
-        setBarberOptions(barbers);
-      } catch (error) {
-        console.error("Erro ao buscar barbeiros:", error);
-      }
-    };
-    fetchBarberOptions();
-  }, []);
 
   // Atualiza os agendamentos da data em edição
   useEffect(() => {
@@ -481,7 +436,7 @@ const AdminDashboard: React.FC = () => {
       
       const dateStr = getLocalDateString(editingDate);
       
-      await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
+      const result = await updateAgendamento(editingAppointment.id, {
         dateStr: dateStr,
         timeSlots: requiredSlots,
         service: editingService,
@@ -491,7 +446,11 @@ const AdminDashboard: React.FC = () => {
         status: editingAppointment.status,
       });
       
-      handleCancelEdit();
+      if (result.success) {
+        handleCancelEdit();
+      } else {
+        setEditFeedback(result.error || "Erro ao atualizar agendamento");
+      }
     } catch (error) {
       console.error("Erro ao atualizar agendamento:", error);
       setEditFeedback("Erro ao salvar. Tente novamente.");
@@ -500,7 +459,10 @@ const AdminDashboard: React.FC = () => {
 
   const handleCancelAppointment = async (appt: Appointment) => {
     try {
-      await deleteDoc(doc(db, "agendamentos", appt.id));
+      const result = await deleteAgendamento(appt.id);
+      if (!result.success) {
+        console.error("Erro ao cancelar agendamento:", result.error);
+      }
     } catch (error) {
       console.error("Erro ao cancelar agendamento:", error);
     }

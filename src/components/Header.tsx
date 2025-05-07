@@ -26,6 +26,9 @@ const Cabecalho: React.FC = () => {
     }
   };
 
+  // Função de debugging
+  console.log("Navigation render:", { user, loading });
+
   return (
     <header className="bg-black text-white px-6 py-4">
       <div className="flex items-center justify-between">
@@ -81,7 +84,7 @@ const Cabecalho: React.FC = () => {
             <span>Carregando...</span>
           ) : user ? (
             <>
-              <span>{user.displayName}</span>
+              <span>{user.name || user.email}</span>
               <button
                 onClick={handleLogout}
                 className="bg-red-500 px-3 py-1 rounded hover:bg-red-600"
@@ -229,7 +232,7 @@ const Cabecalho: React.FC = () => {
               <span>Carregando...</span>
             ) : user ? (
               <>
-                <span>{user.displayName}</span>
+                <span>{user.name || user.email}</span>
                 <button
                   onClick={() => {
                     handleLogout();
