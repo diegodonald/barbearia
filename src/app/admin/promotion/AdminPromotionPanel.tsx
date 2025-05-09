@@ -217,8 +217,18 @@ const AdminPromotionPanel: React.FC = () => {
   // Função para excluir um usuário
   const deleteUser = async (userId: string, currentRole: string) => {
     try {
+      if (!window.confirm(`Confirma a exclusão deste usuário? Esta ação não pode ser desfeita.`)) {
+        return;
+      }
+
       setError('');
       setSuccess('');
+
+      // Mostrar loading ou alguma indicação de progresso
+      const loadingMsg = document.createElement('div');
+      loadingMsg.textContent = 'Excluindo usuário...';
+      loadingMsg.className = 'fixed top-0 left-0 w-full bg-blue-500 text-white p-2 text-center';
+      document.body.appendChild(loadingMsg);
 
       // 1. Excluir o documento da coleção usuarios
       const userRef = doc(db, 'usuarios', userId);
@@ -280,6 +290,54 @@ const AdminPromotionPanel: React.FC = () => {
       } catch (err) {
         console.error('Erro ao excluir agendamentos:', err);
       }
+
+      // 4. Exclusão do usuário do Firebase Authentication usando a versão HTTP da função
+      try {
+        // Obter token e funções necessárias
+        const { getAuth, getIdToken } = await import('firebase/auth');
+        const auth = getAuth();
+        const currentUser = auth.currentUser;
+
+        if (!currentUser) {
+          throw new Error('Você precisa estar autenticado para realizar esta ação');
+        }
+
+        // Obter token de ID atualizado
+        const token = await getIdToken(currentUser, true);
+
+        // Chamar a versão HTTP da função em vez da versão callable
+        const response = await fetch(
+          'https://southamerica-east1-barbearia-270425.cloudfunctions.net/deleteUserHttp',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+              'Access-Control-Allow-Origin': '*',
+            },
+            body: JSON.stringify({ uid: userId }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Erro ao excluir usuário: ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log('Resposta da função de exclusão:', result);
+
+        setSuccess('Usuário excluído com sucesso!');
+      } catch (authErr: unknown) {
+        console.error('Erro ao excluir usuário do Firebase Authentication:', authErr);
+        setError(
+          `Aviso: O usuário foi removido do sistema, mas ocorreu um erro ao excluí-lo do sistema de autenticação: ${authErr instanceof Error ? authErr.message : 'Erro interno'}`
+        );
+        setSuccess('Usuário parcialmente excluído! (Os dados foram removidos)');
+      }
+
+      // Remover a mensagem de loading
+      document.body.removeChild(loadingMsg);
 
       setSuccess('Usuário excluído com sucesso!');
 
