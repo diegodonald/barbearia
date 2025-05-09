@@ -1,7 +1,8 @@
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import type { Analytics } from "firebase/analytics";
+import { setPersistence, browserLocalPersistence } from 'firebase/auth';
 
 // Configuração do Firebase
 const firebaseConfig = {
@@ -14,12 +15,14 @@ const firebaseConfig = {
   measurementId: "G-4YXRFCJY50",
 };
 
-// Inicializa o Firebase
-const app = initializeApp(firebaseConfig);
-
-// Inicializa os serviços principais
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Inicializa Firebase apenas uma vez
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+const auth = getAuth(app);
+// Força a persistência da autenticação
+setPersistence(auth, browserLocalPersistence)
+  .then(() => console.log("Persistência de autenticação configurada"))
+  .catch(err => console.error("Erro ao configurar persistência:", err));
+const db = getFirestore(app);
 
 // Inicializa o Analytics somente no navegador por meio de importação dinâmica
 let analytics: Analytics | null = null;
@@ -44,5 +47,7 @@ if (typeof window !== "undefined") {
     });
 }
 
-export { analytics };
+console.log("Firebase inicializado com sucesso!");
+
+export { app, auth, db, analytics };
 export default app;

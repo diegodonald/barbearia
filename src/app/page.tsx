@@ -1,5 +1,5 @@
-import Header from "../components/Header";
-import Footer from "../components/Footer";
+import Header from '../components/Header';
+import Footer from '../components/Footer';
 
 export default function Home() {
   return (
@@ -55,6 +55,7 @@ export default function Home() {
             >
               Obter Direções
             </a>
+            <p>Agendamento fácil, não perca tempo na fila!</p>
           </div>
         </div>
       </section>

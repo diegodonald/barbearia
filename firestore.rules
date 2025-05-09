@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Funções auxiliares
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserRole() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == "admin";
+    }
+    
+    function isBarber() {
+      return isAuthenticated() && getUserRole() == "barber";
+    }
+    
+    function isUser() {
+      return isAuthenticated() && getUserRole() == "user";
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Regras para coleções
+    match /usuarios/{userId} {
+      // Todos podem ler os dados básicos de qualquer usuário
+      allow read: if isAuthenticated();
+      // Apenas o próprio usuário e admins podem atualizar dados básicos
+      allow update: if isOwner(userId) || isAdmin();
+      // Apenas admins podem criar e excluir usuários via Firestore
+      allow create, delete: if isAdmin();
+      
+      // Adicionar acesso às sub-coleções
+      match /exceptions/{exceptionId} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId) || isAdmin();
+      }
+    }
+    
+    match /barbeiros/{barberId} {
+      // Todos autenticados podem visualizar barbeiros
+      allow read: if isAuthenticated();
+      // Apenas admins podem gerenciar barbeiros
+      allow create, update, delete: if isAdmin();
+    }
+    
+    match /horarios/{barberId} {
+      // Todos autenticados podem ler os horários
+      allow read: if isAuthenticated();
+      // Apenas o próprio barbeiro e admins podem modificar os horários
+      allow write: if isAdmin() || 
+        (isBarber() && 
+         exists(/databases/$(database)/documents/barbeiros/$(barberId)) && 
+         get(/databases/$(database)/documents/barbeiros/$(barberId)).data.userId == request.auth.uid);
+    }
+    
+    match /excecoes/{barberId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+      
+      match /datas/{dataId} {
+        // Todos autenticados podem ler as exceções
+        allow read: if isAuthenticated();
+        // Apenas o próprio barbeiro e admins podem modificar as exceções
+        allow write: if isAdmin() || 
+          (isBarber() && 
+           exists(/databases/$(database)/documents/barbeiros/$(barberId)) && 
+           get(/databases/$(database)/documents/barbeiros/$(barberId)).data.userId == request.auth.uid);
+      }
+    }
+    
+    match /servicos/{servicoId} {
+      // Todos autenticados podem ler serviços
+      allow read: if isAuthenticated();
+      // Apenas admins podem gerenciar serviços
+      allow write: if isAdmin();
+    }
+    
+    match /agendamentos/{agendamentoId} {
+      // Correção: mudar userId para uid para consistência
+      allow read: if isAuthenticated() && 
+        (request.auth.uid == resource.data.uid || isAdmin() ||
+        (isBarber() && resource.data.barberId != null && 
+         request.auth.uid == resource.data.barberId));
+      
+      // Clientes podem criar agendamentos
+      allow create: if isAuthenticated();
+      
+      // Clientes podem atualizar seus próprios agendamentos
+      allow update: if isAuthenticated() && 
+        (request.auth.uid == resource.data.uid || isAdmin() ||
+        (isBarber() && resource.data.barberId != null && 
+         request.auth.uid == resource.data.barberId));
+      
+      // Apenas clientes e admins podem deletar agendamentos
+      allow delete: if isAuthenticated() && 
+        (request.auth.uid == resource.data.uid || isAdmin());
+    }
+    
+    match /configuracoes/{configId} {
+      // Todos podem ler as configurações globais
+      allow read: if isAuthenticated();
+      // Apenas admins podem modificar as configurações globais
+      allow write: if isAdmin();
+      
+      match /operatingHours/exceptions/{dataId} {
+        // Todos podem ler as exceções globais
+        allow read: if isAuthenticated();
+        // Apenas admins podem modificar as exceções globais
+        allow write: if isAdmin();
+      }
+    }
+  }
+}

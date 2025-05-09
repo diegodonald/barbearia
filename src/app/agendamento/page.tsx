@@ -10,7 +10,6 @@ import {
   addDoc,
   doc,
   getDoc,
-  getDocs,
   query,
   where,
   onSnapshot,
@@ -20,6 +19,11 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { useOperatingHours } from "@/hooks/useOperatingHours";
 import errorMessages from "@/utils/errorMessages";
+import { useServicos } from "@/hooks/useServicos";
+import { useBarbeiros } from "@/hooks/useBarbeiros";
+import { Agendamento } from '@/hooks/useAgendamentos';
+import { OperatingHours, DayConfig, Exception } from "@/types/common";
+import { useAgendamentosOperations } from '@/hooks/useAgendamentosOperations';
 
 // ----------------------
 // Helper Functions
@@ -95,11 +99,11 @@ function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite:
 // ----------------------
 
 // Interface para configuração de um dia
-interface DayConfig {
+export interface DayConfig {
   open?: string;
+  close?: string;
   breakStart?: string;
   breakEnd?: string;
-  close?: string;
   active: boolean;
 }
 
@@ -112,6 +116,17 @@ export interface OperatingHours {
   quinta: DayConfig;
   sexta: DayConfig;
   sábado: DayConfig;
+}
+
+export interface Exception {
+  id?: string;
+  date: string;
+  status: 'blocked' | 'available';
+  message?: string;
+  open?: string;
+  close?: string;
+  breakStart?: string;
+  breakEnd?: string;
 }
 
 // Configuração global padrão (usada se necessário)
@@ -150,42 +165,80 @@ function getEffectiveDayConfig(
 ): DayConfig | null {
   const dayName = getDayName(date);
   const normalizedDate = getLocalDateString(date);
+  
+  console.log(`Verificando configuração para barbeiro ${barber.name} no dia ${normalizedDate} (${dayName})`);
+  console.log(`Horários do barbeiro:`, barber.horarios);
 
-  // Se houver configuração individual definida (horarios) para o dia, use-a.
-  let individualConfig: DayConfig | null = null;
-  if (barber.horarios && barber.horarios[dayName] !== undefined) {
-    individualConfig = barber.horarios[dayName];
-    console.log(`Barber ${barber.name}: Using individual config for ${dayName} (${normalizedDate}).`);
-  }
-
-  // Verificar exceções: priorize as exceções do barbeiro (armazenadas no campo "exceptions") se existirem,
-  // caso contrário, utilize as exceções globais.
-  const effectiveExceptions = barber.exceptions && barber.exceptions.length > 0 ? barber.exceptions : globalExceptions;
-  if (effectiveExceptions) {
-    const exception = effectiveExceptions.find((ex: any) => ex.date === normalizedDate);
+  // Primeiro verificar exceções do barbeiro (têm maior prioridade)
+  if (barber.exceptions && barber.exceptions.length > 0) {
+    const exception = barber.exceptions.find((ex) => ex.date === normalizedDate);
     if (exception) {
-      console.log(`Exception for ${barber.name} on ${normalizedDate}:`, exception);
+      console.log(`Exceção encontrada para ${barber.name} no dia ${normalizedDate}:`, exception);
+      
       if (exception.status === "blocked") {
-        console.log(`Day ${normalizedDate} blocked by exception.`);
+        console.log(`Dia bloqueado por exceção para ${barber.name}.`);
         return null;
       }
+      
       if (exception.status === "available" && exception.open && exception.close) {
-        console.log(`Day ${normalizedDate} opened by exception: ${exception.open} - ${exception.close}`);
-        return { open: exception.open, close: exception.close, active: true };
+        console.log(`Dia habilitado por exceção para ${barber.name}: ${exception.open}-${exception.close}`);
+        return { 
+          open: exception.open, 
+          close: exception.close, 
+          breakStart: exception.breakStart, 
+          breakEnd: exception.breakEnd, 
+          active: true 
+        };
       }
     }
   }
-
-  // Se individualConfig foi encontrada, use-a.
-  if (individualConfig) {
-    return individualConfig && individualConfig.active && individualConfig.open && individualConfig.close
-      ? individualConfig
-      : null;
+  
+  // Depois verificar exceções globais
+  const globalException = globalExceptions.find((ex) => ex.date === normalizedDate);
+  if (globalException) {
+    console.log(`Exceção global encontrada para ${normalizedDate}:`, globalException);
+    
+    if (globalException.status === "blocked") {
+      console.log(`Dia bloqueado por exceção global.`);
+      return null;
+    }
+    
+    if (globalException.status === "available" && globalException.open && globalException.close) {
+      console.log(`Dia habilitado por exceção global: ${globalException.open}-${globalException.close}`);
+      return { 
+        open: globalException.open, 
+        close: globalException.close, 
+        breakStart: globalException.breakStart, 
+        breakEnd: globalException.breakEnd, 
+        active: true 
+      };
+    }
   }
 
-  // Caso contrário, use a configuração global.
+  // Em seguida, verificar configuração individual do barbeiro
+  if (barber.horarios && barber.horarios[dayName]) {
+    const individualConfig = barber.horarios[dayName];
+    console.log(`Configuração individual encontrada para ${barber.name}:`, individualConfig);
+    
+    if (individualConfig.active && individualConfig.open && individualConfig.close) {
+      console.log(`Usando configuração individual para ${barber.name}`);
+      return individualConfig;
+    } else if (individualConfig.active === false) {
+      console.log(`Dia desativado na configuração individual de ${barber.name}`);
+      return null;
+    }
+    // Se a configuração individual existir mas não for ativa ou completa, continue para global
+  }
+
+  // Por último, usar configuração global
   const globalConfig = globalOperatingHours[dayName];
-  return globalConfig && globalConfig.active && globalConfig.open && globalConfig.close ? globalConfig : null;
+  if (globalConfig && globalConfig.active && globalConfig.open && globalConfig.close) {
+    console.log(`Usando configuração global para ${barber.name}`);
+    return globalConfig;
+  } else {
+    console.log(`Configuração global indisponível ou incompleta para ${dayName}`);
+    return null;
+  }
 }
 // A partir dos free slots individuais de cada barbeiro disponível (fullSlots menos os slots reservados),
 // retorna a união desses free slots para o dia.
@@ -252,6 +305,8 @@ const Agendamento: React.FC = () => {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { operatingHours, exceptions } = useOperatingHours();
+  // Adicionar essa linha - chamar o hook no nível superior
+  const { createAgendamento } = useAgendamentosOperations();
 
   const [step, setStep] = useState<number>(1);
   const [selectedService, setSelectedService] = useState<{
@@ -304,48 +359,20 @@ const Agendamento: React.FC = () => {
     fetchUserData();
   }, [user, loading]);
 
-  useEffect(() => {
-    async function fetchBarbers() {
-      try {
-        const q = query(collection(db, "usuarios"), where("role", "==", "barber"));
-        const querySnapshot = await getDocs(q);
-        const list = querySnapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name as string,
-            horarios: data.horarios || null,
-            exceptions: data.exceptions || [] // Adiciona as exceções do barbeiro
-          } as BarberWithSchedule;
-        });
-        setBarberList(list);
-      } catch (error) {
-        console.error("Error fetching barbers:", error);
-      }
-    }
-    fetchBarbers();
-  }, []);
+  const { servicos, loading: servicosLoading } = useServicos();
+  const { barbeiros, loading: barbeirosLoading } = useBarbeiros();
 
   useEffect(() => {
-    async function fetchServiceOptions() {
-      try {
-        const q = query(collection(db, "servicos"));
-        const snapshot = await getDocs(q);
-        const services = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            name: data.name,
-            duration: Number(data.duration),
-            value: Number(data.value),
-          };
-        });
-        setServiceOptions(services);
-      } catch (error) {
-        console.error("Error fetching services:", error);
-      }
+    if (!servicosLoading) {
+      setServiceOptions(servicos);
     }
-    fetchServiceOptions();
-  }, []);
+  }, [servicos, servicosLoading]);
+
+  useEffect(() => {
+    if (!barbeirosLoading) {
+      setBarberList(barbeiros);
+    }
+  }, [barbeiros, barbeirosLoading]);
 
   useEffect(() => {
     if (selectedBarber !== "Qualquer" && selectedBarber !== "") {
@@ -413,8 +440,6 @@ const Agendamento: React.FC = () => {
   }, [selectedDate]);
 
   // Calcula os free slots (computedSlots)
-// Calcula os free slots (computedSlots)
-// Calcula os free slots (computedSlots)
 useEffect(() => {
   if (!selectedDate) {
     setComputedSlots({ manha: [], tarde: [], noite: [] });
@@ -424,11 +449,13 @@ useEffect(() => {
   console.log("Calculando slots para:", getLocalDateString(selectedDate));
   console.log("Barbeiro selecionado:", selectedBarber);
   
+  // Configuração efetiva a usar
+  const effectiveGlobalOperatingHours = operatingHours || defaultOperatingHours;
+  const effectiveGlobalExceptions = exceptions || [];
+  
   if (selectedBarber === "Qualquer") {
     // Primeiro, verificar se existem barbeiros disponíveis neste dia
-    const dayName = getDayName(selectedDate);
-    console.log("Nome do dia:", dayName);
-    console.log("Horários efetivos:", effectiveOperatingHours);
+    console.log("Verificando barbeiros disponíveis...", barberList.length);
     
     // Obtenha a lista de barbeiros que estão disponíveis neste dia
     // usando a configuração global ou individual de cada um
@@ -436,8 +463,8 @@ useEffect(() => {
       const config = getEffectiveDayConfig(
         b, 
         selectedDate, 
-        operatingHours || defaultOperatingHours, 
-        exceptions || []
+        effectiveGlobalOperatingHours, 
+        effectiveGlobalExceptions
       );
       return config !== null;
     });
@@ -454,8 +481,8 @@ useEffect(() => {
     const unionFreeSlots = getUnionFreeSlots(
       selectedDate,
       availableBarbers,
-      operatingHours || defaultOperatingHours,
-      exceptions || [],
+      effectiveGlobalOperatingHours,
+      effectiveGlobalExceptions,
       bookedSlotsByBarber
     );
     
@@ -476,7 +503,7 @@ useEffect(() => {
     const effectiveConfig = getEffectiveDayConfig(
       specificBarber,
       selectedDate,
-      operatingHours || defaultOperatingHours,
+      effectiveGlobalOperatingHours,
       effectiveExceptions
     );
     
@@ -486,6 +513,8 @@ useEffect(() => {
       return;
     }
     
+    console.log("Configuração efetiva para barbeiro específico:", effectiveConfig);
+    
     const fullSlots = generateSlots(
       effectiveConfig.open!,
       effectiveConfig.breakStart,
@@ -494,8 +523,13 @@ useEffect(() => {
       30
     );
     
+    console.log("Slots completos gerados:", fullSlots);
+    
     const barberBooked = bookedSlotsByBarber[specificBarber.id] || [];
+    console.log("Slots já reservados:", barberBooked);
+    
     const free = fullSlots.filter((slot) => !barberBooked.includes(slot));
+    console.log("Slots disponíveis:", free);
     
     if (free.length === 0) {
       setFeedback("Não há horários disponíveis para a data selecionada.");
@@ -526,26 +560,30 @@ useEffect(() => {
     setStep(step - 1);
   };
 
-  const saveAppointment = async (assignedBarber: Barber, slots: string[]) => {
-    if (!selectedDate) return;
-    const normalizedDateStr = getLocalDateString(selectedDate);
+  const saveAppointment = async (selectedBarber: Barber, requiredSlots: string[]) => {
     try {
-      await addDoc(collection(db, "agendamentos"), {
-        uid: user!.uid,
-        email: user!.email,
-        name: userName,
-        service: selectedService?.name,
-        duration: selectedService?.duration,
-        barber: assignedBarber.name,
-        barberId: assignedBarber.id,
-        dateStr: normalizedDateStr,
-        timeSlots: slots,
+      const result = await createAgendamento({
+        uid: user.uid,
+        email: user.email,
+        name: user.name || userName,
+        service: selectedService.name,
+        duration: selectedService.duration,
+        barber: selectedBarber.name,
+        barberId: selectedBarber.id,
+        dateStr: getLocalDateString(selectedDate),
+        timeSlots: requiredSlots,
         createdAt: new Date(),
+        status: "confirmado"
       });
-      setFeedback("Agendamento salvo com sucesso!");
+      
+      if (!result.success) {
+        setFeedback(result.error || "Erro ao salvar agendamento");
+      }
+      return result.success;
     } catch (error) {
-      console.error("Error saving appointment:", error);
-      setFeedback("Erro ao salvar agendamento. Tente novamente.");
+      console.error("Erro ao salvar agendamento:", error);
+      setFeedback("Erro ao processar o agendamento. Por favor, tente novamente.");
+      return false;
     }
   };
 

@@ -1,12 +1,15 @@
 /* stylelint-disable at-rule-no-unknown */
 
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
+  --background: #fff;
   --foreground: #171717;
 }
 
+/* stylelint-disable-next-line no-duplicate-selectors */
 :root {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -28,8 +31,8 @@ body {
 }
 
 .location-section {
-  background-color: #000000; /* Fundo preto */
-  color: #ffffff;
+  background-color: #000; /* Fundo preto */
+  color: #fff;
   padding: 20px;
   border-radius: 8px;
   text-align: center;
@@ -41,7 +44,7 @@ body {
   gap: 20px;
 }
 
-@media (min-width: 768px) {
+@media (width >= 768px) {
   .location-section .flex {
     flex-direction: row;
     align-items: flex-start;

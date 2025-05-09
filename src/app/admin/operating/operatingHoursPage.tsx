@@ -65,15 +65,14 @@ export default function OperatingHoursPage() {
     close: "",
   });
 
-  // Buscar configurações globais no Firestore
+  // Modificar o useEffect que carrega os dados
   useEffect(() => {
-    const docRef = doc(db, "configuracoes", "operatingHours");
+    const docRef = doc(db, "configuracoes", "horarios");
     getDoc(docRef).then((docSnap) => {
       if (docSnap.exists()) {
-        // A configuração já vem estruturada com o campo "horarios"
-        setOperatingHours(docSnap.data() as OperatingHours);
+        setOperatingHours({ horarios: docSnap.data() });
       } else {
-        // Cria configuração padrão caso não exista, seguindo a estrutura "horarios"
+        // Cria configuração padrão
         const defaultConfig: OperatingHours = {
           horarios: {
             segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
@@ -85,14 +84,14 @@ export default function OperatingHoursPage() {
             domingo: { active: false },
           },
         };
-        setDoc(docRef, defaultConfig);
+        setDoc(docRef, defaultConfig.horarios);
         setOperatingHours(defaultConfig);
       }
       setLoading(false);
     });
 
-    // Listener para as exceções (subcoleção)
-    const exceptionsRef = collection(db, "configuracoes", "operatingHours", "exceptions");
+    // Listener para as exceções
+    const exceptionsRef = collection(db, "configuracoes", "excecoes", "datas");
     const unsubscribe = onSnapshot(exceptionsRef, (snapshot) => {
       const exList = snapshot.docs.map((doc) => ({
         id: doc.id,
@@ -100,15 +99,17 @@ export default function OperatingHoursPage() {
       })) as Exception[];
       setExceptions(exList);
     });
+    
     return () => unsubscribe();
   }, []);
 
-  // Função para salvar as configurações globais
+  // Modificar a função para salvar as configurações globais
   const handleSave = async () => {
     if (!operatingHours) return;
     try {
-      const docRef = doc(db, "configuracoes", "operatingHours");
-      await updateDoc(docRef, operatingHours);
+      // Salvar na coleção configuracoes/horarios
+      const docRef = doc(db, "configuracoes", "horarios");
+      await setDoc(docRef, operatingHours.horarios);
       alert("Configurações salvas com sucesso!");
     } catch (error) {
       console.error("Erro ao salvar:", error);
@@ -116,7 +117,7 @@ export default function OperatingHoursPage() {
     }
   };
 
-  // Função para adicionar nova exceção
+  // Modificar a função para adicionar exceções
   const handleAddException = async () => {
     if (!newException.date) {
       alert("Informe uma data para a exceção.");
@@ -127,18 +128,19 @@ export default function OperatingHoursPage() {
       return;
     }
     try {
-      const exceptionsRef = collection(db, "configuracoes", "operatingHours", "exceptions");
-      await addDoc(exceptionsRef, newException);
+      // Salvar na coleção configuracoes/excecoes/datas
+      const exceptionsRef = doc(db, "configuracoes", "excecoes", "datas", newException.date);
+      await setDoc(exceptionsRef, newException);
       setNewException({ date: "", status: "blocked", message: "", open: "", close: "" });
     } catch (error) {
       console.error("Erro ao adicionar exceção:", error);
     }
   };
 
-  // Função para remover exceção
+  // Modificar a função para remover exceções
   const handleDeleteException = async (exceptionId: string) => {
     try {
-      const exceptionDocRef = doc(db, "configuracoes", "operatingHours", "exceptions", exceptionId);
+      const exceptionDocRef = doc(db, "configuracoes", "excecoes", "datas", exceptionId);
       await deleteDoc(exceptionDocRef);
     } catch (error) {
       console.error("Erro ao deletar exceção:", error);

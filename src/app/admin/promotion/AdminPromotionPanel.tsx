@@ -129,29 +129,79 @@ const AdminPromotionPanel: React.FC = () => {
     }
   }, [user]);
 
-  // Alterar papel/função do usuário
+  // Modificação na função de promoção para usar a estrutura correta
   const changeUserRole = async (userId: string, newRole: string) => {
     try {
       setError("");
+      
+      // Primeiro atualiza o usuário - isso funciona
       const userRef = doc(db, "usuarios", userId);
       await updateDoc(userRef, {
-        role: newRole
+        role: newRole,
       });
 
-      // Se o usuário for promovido a barbeiro, inicializar a configuração de agenda
+      // Se o usuário for promovido a barbeiro, criar as entradas necessárias
       if (newRole === "barber") {
-        const barberConfigRef = doc(db, "barbers", userId);
-        const barberConfigDoc = await getDoc(barberConfigRef);
-
-        if (!barberConfigDoc.exists()) {
-          // Usar a configuração global como padrão para novos barbeiros
-          const globalConfig = getGlobalHorarios();
-          await setDoc(barberConfigRef, globalConfig);
+        try {
+          console.log("Iniciando criação de configurações para novo barbeiro:", userId);
+          
+          // 1. Obter informações do usuário
+          const userDoc = await getDoc(userRef);
+          const userData = userDoc.data();
+          
+          // 2. Criar entrada na coleção barbeiros
+          console.log("Criando documento na coleção barbeiros");
+          const barberRef = doc(db, "barbeiros", userId);
+          await setDoc(barberRef, {
+            userId: userId,
+            name: userData?.name || "Sem nome",
+            active: true
+          });
+          console.log("Documento criado na coleção barbeiros");
+          
+          // 3. Obter configuração global para usar como base
+          console.log("Buscando configurações globais");
+          const globalHorariosRef = doc(db, "configuracoes", "horarios");
+          const globalHorariosSnap = await getDoc(globalHorariosRef);
+          
+          let defaultHorarios;
+          if (globalHorariosSnap.exists()) {
+            defaultHorarios = globalHorariosSnap.data();
+            console.log("Configuração global encontrada:", defaultHorarios);
+          } else {
+            // Configuração padrão
+            defaultHorarios = {
+              segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+              terça: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+              quarta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+              quinta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+              sexta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
+              sábado: { open: "09:00", breakStart: "12:00", breakEnd: "13:30", close: "14:00", active: true },
+              domingo: { active: false }
+            };
+            console.log("Usando configuração padrão");
+          }
+          
+          // 4. Criar documento na coleção horarios
+          console.log("Criando documento na coleção horarios");
+          const horariosRef = doc(db, "horarios", userId);
+          await setDoc(horariosRef, defaultHorarios);
+          console.log("Documento criado na coleção horarios");
+          
+          // Não é necessário criar documento na coleção excecoes
+          // Isso será feito apenas quando houver exceções a adicionar
+          
+          console.log("Configuração completa para o novo barbeiro");
+        } catch (innerError) {
+          console.error("Erro ao criar configurações do barbeiro:", innerError);
+          // Continuar mesmo com erro, pois o papel já foi atualizado
         }
       }
+
+      setSuccess("Papel do usuário atualizado com sucesso!");
     } catch (error) {
       console.error("Error updating user role:", error);
-      setError(`Erro ao atualizar papel do usuário: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+      setError(`Erro ao atualizar papel do usuário: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
     }
   };
 
