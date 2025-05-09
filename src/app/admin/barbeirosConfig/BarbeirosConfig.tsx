@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import "react-datepicker/dist/react-datepicker.css";
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import 'react-datepicker/dist/react-datepicker.css';
 
 // Atualização da interface para incluir os novos campos de intervalo
 interface DayConfig {
@@ -32,7 +32,7 @@ export interface BarberConfig {
 interface Exception {
   id?: string;
   date: string; // Formato "YYYY-MM-DD"
-  status: "blocked" | "available";
+  status: 'blocked' | 'available';
   message?: string;
   open?: string;
   close?: string;
@@ -48,32 +48,32 @@ const BarbeirosConfig: React.FC = () => {
 
   // Estado para a lista de barbeiros
   const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
-  const [selectedBarberId, setSelectedBarberId] = useState<string>("");
+  const [selectedBarberId, setSelectedBarberId] = useState<string>('');
   const [barberConfig, setBarberConfig] = useState<BarberConfig | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [feedback, setFeedback] = useState<string>("");
+  const [feedback, setFeedback] = useState<string>('');
 
   // Estado para nova exceção (estrutura inalterada)
   const [newException, setNewException] = useState<Exception>({
-    date: "",
-    status: "blocked",
-    message: "",
-    open: "",
-    close: "",
+    date: '',
+    status: 'blocked',
+    message: '',
+    open: '',
+    close: '',
   });
 
   // Carrega a lista de barbeiros com role "barber"
   useEffect(() => {
     async function fetchBarbers() {
       try {
-        const q = await getDocs(collection(db, "usuarios"));
+        const q = await getDocs(collection(db, 'usuarios'));
         const barbers = q.docs
-          .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
-          .filter((user) => user.role === "barber")
-          .map((user) => ({ id: user.id, name: user.name }));
+          .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+          .filter(user => user.role === 'barber')
+          .map(user => ({ id: user.id, name: user.name }));
         setBarberOptions(barbers);
       } catch (error) {
-        console.error("Erro ao buscar barbeiros:", error);
+        console.error('Erro ao buscar barbeiros:', error);
       }
     }
     fetchBarbers();
@@ -83,37 +83,34 @@ const BarbeirosConfig: React.FC = () => {
   useEffect(() => {
     if (!selectedBarberId) return;
     setLoading(true);
-    
+
     // 1. Carregar os horários da coleção horarios/{barberId}
-    const horarioDocRef = doc(db, "horarios", selectedBarberId);
-    
+    const horarioDocRef = doc(db, 'horarios', selectedBarberId);
+
     // 2. Carregar as exceções da subcoleção excecoes/{barberId}/datas
-    const excecoesDatasRef = collection(db, "excecoes", selectedBarberId, "datas");
-    
-    Promise.all([
-      getDoc(horarioDocRef),
-      getDocs(excecoesDatasRef)
-    ])
+    const excecoesDatasRef = collection(db, 'excecoes', selectedBarberId, 'datas');
+
+    Promise.all([getDoc(horarioDocRef), getDocs(excecoesDatasRef)])
       .then(([horariosSnapshot, excecoesSnapshot]) => {
         // Processar os horários
-        const horarios = horariosSnapshot.exists() 
-          ? horariosSnapshot.data()
+        const horarios = horariosSnapshot.exists()
+          ? (horariosSnapshot.data() as BarberConfig['horarios'])
           : createDefaultSchedule();
-        
+
         // Processar as exceções
         const exceptions = excecoesSnapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
-        }));
-        
+          ...doc.data(),
+        })) as Exception[];
+
         // Configurar o estado
         setBarberConfig({
-          horarios,
-          exceptions
+          horarios: horarios,
+          exceptions: exceptions,
         });
       })
       .catch(error => {
-        console.error("Erro ao carregar configurações:", error);
+        console.error('Erro ao carregar configurações:', error);
       })
       .finally(() => {
         setLoading(false);
@@ -123,13 +120,49 @@ const BarbeirosConfig: React.FC = () => {
   // Adicione esta função auxiliar fora do componente:
   function createDefaultSchedule() {
     return {
-      segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-      terça: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-      quarta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-      quinta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-      sexta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "17:30", active: true },
-      sábado: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "14:00", active: true },
-      domingo: { active: false }
+      segunda: {
+        open: '08:00',
+        breakStart: '12:00',
+        breakEnd: '13:30',
+        close: '17:30',
+        active: true,
+      },
+      terça: {
+        open: '08:00',
+        breakStart: '12:00',
+        breakEnd: '13:30',
+        close: '17:30',
+        active: true,
+      },
+      quarta: {
+        open: '08:00',
+        breakStart: '12:00',
+        breakEnd: '13:30',
+        close: '17:30',
+        active: true,
+      },
+      quinta: {
+        open: '08:00',
+        breakStart: '12:00',
+        breakEnd: '13:30',
+        close: '17:30',
+        active: true,
+      },
+      sexta: {
+        open: '08:00',
+        breakStart: '12:00',
+        breakEnd: '13:30',
+        close: '17:30',
+        active: true,
+      },
+      sábado: {
+        open: '08:00',
+        breakStart: '12:00',
+        breakEnd: '13:30',
+        close: '14:00',
+        active: true,
+      },
+      domingo: { active: false },
     };
   }
 
@@ -138,44 +171,40 @@ const BarbeirosConfig: React.FC = () => {
     if (!selectedBarberId || !barberConfig) return;
     try {
       // 1. Salvar os horários na coleção horarios/{barberId}
-      const horarioDocRef = doc(db, "horarios", selectedBarberId);
-      await setDoc(
-        horarioDocRef,
-        barberConfig.horarios,
-        { merge: true }
-      );
-      
+      const horarioDocRef = doc(db, 'horarios', selectedBarberId);
+      await setDoc(horarioDocRef, barberConfig.horarios, { merge: true });
+
       // 2. Salvar as exceções na subcoleção excecoes/{barberId}/datas
       if (barberConfig.exceptions && barberConfig.exceptions.length > 0) {
         // Primeiro, remover exceções existentes
-        const excecoesDatasRef = collection(db, "excecoes", selectedBarberId, "datas");
+        const excecoesDatasRef = collection(db, 'excecoes', selectedBarberId, 'datas');
         const snapshot = await getDocs(excecoesDatasRef);
         const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
         await Promise.all(deletePromises);
-        
+
         // Depois, adicionar as novas exceções
         const addPromises = barberConfig.exceptions.map(exception => {
           const docId = exception.date; // Usar a data como ID do documento
-          return setDoc(doc(db, "excecoes", selectedBarberId, "datas", docId), exception);
+          return setDoc(doc(db, 'excecoes', selectedBarberId, 'datas', docId), exception);
         });
         await Promise.all(addPromises);
       }
-      
-      setFeedback("Configurações salvas com sucesso!");
+
+      setFeedback('Configurações salvas com sucesso!');
     } catch (error) {
-      console.error("Erro ao salvar configurações:", error);
-      setFeedback("Erro ao salvar configurações. Tente novamente.");
+      console.error('Erro ao salvar configurações:', error);
+      setFeedback('Erro ao salvar configurações. Tente novamente.');
     }
   };
 
   // Função para adicionar uma exceção
   const handleAddException = () => {
     if (!newException.date) {
-      setFeedback("Informe uma data para a exceção.");
+      setFeedback('Informe uma data para a exceção.');
       return;
     }
-    if (newException.status === "available" && (!newException.open || !newException.close)) {
-      setFeedback("Para liberar um dia inativo, informe os horários de abertura e fechamento.");
+    if (newException.status === 'available' && (!newException.open || !newException.close)) {
+      setFeedback('Para liberar um dia inativo, informe os horários de abertura e fechamento.');
       return;
     }
     if (barberConfig) {
@@ -183,8 +212,8 @@ const BarbeirosConfig: React.FC = () => {
         ? [...barberConfig.exceptions, newException]
         : [newException];
       setBarberConfig({ ...barberConfig, exceptions: updatedExceptions });
-      setNewException({ date: "", status: "blocked", message: "", open: "", close: "" });
-      setFeedback("");
+      setNewException({ date: '', status: 'blocked', message: '', open: '', close: '' });
+      setFeedback('');
     }
   };
 
@@ -197,7 +226,7 @@ const BarbeirosConfig: React.FC = () => {
   };
 
   // Renderiza o formulário para cada dia, exibindo os 4 campos de horário
-  const renderDayForm = (day: keyof BarberConfig["horarios"]) => {
+  const renderDayForm = (day: keyof BarberConfig['horarios']) => {
     if (!barberConfig) return null;
     const config = barberConfig.horarios[day];
     return (
@@ -208,7 +237,7 @@ const BarbeirosConfig: React.FC = () => {
           <input
             type="checkbox"
             checked={config.active}
-            onChange={(e) =>
+            onChange={e =>
               setBarberConfig({
                 ...barberConfig,
                 horarios: {
@@ -225,8 +254,8 @@ const BarbeirosConfig: React.FC = () => {
               <label className="block">Horário de Abertura:</label>
               <input
                 type="time"
-                value={config.open || ""}
-                onChange={(e) =>
+                value={config.open || ''}
+                onChange={e =>
                   setBarberConfig({
                     ...barberConfig,
                     horarios: {
@@ -242,8 +271,8 @@ const BarbeirosConfig: React.FC = () => {
               <label className="block">Início do Intervalo:</label>
               <input
                 type="time"
-                value={config.breakStart || ""}
-                onChange={(e) =>
+                value={config.breakStart || ''}
+                onChange={e =>
                   setBarberConfig({
                     ...barberConfig,
                     horarios: {
@@ -259,8 +288,8 @@ const BarbeirosConfig: React.FC = () => {
               <label className="block">Término do Intervalo:</label>
               <input
                 type="time"
-                value={config.breakEnd || ""}
-                onChange={(e) =>
+                value={config.breakEnd || ''}
+                onChange={e =>
                   setBarberConfig({
                     ...barberConfig,
                     horarios: {
@@ -276,8 +305,8 @@ const BarbeirosConfig: React.FC = () => {
               <label className="block">Horário de Fechamento:</label>
               <input
                 type="time"
-                value={config.close || ""}
-                onChange={(e) =>
+                value={config.close || ''}
+                onChange={e =>
                   setBarberConfig({
                     ...barberConfig,
                     horarios: {
@@ -300,7 +329,7 @@ const BarbeirosConfig: React.FC = () => {
       {/* Botão Voltar */}
       <div className="px-4 pt-6 flex justify-start">
         <button
-          onClick={() => router.push("/admin")}
+          onClick={() => router.push('/admin')}
           className="bg-gray-500 px-4 py-2 rounded hover:bg-gray-600 transition text-white"
         >
           Voltar
@@ -314,14 +343,14 @@ const BarbeirosConfig: React.FC = () => {
         <label className="block mb-1">Selecione o Barbeiro:</label>
         <select
           value={selectedBarberId}
-          onChange={(e) => {
+          onChange={e => {
             setSelectedBarberId(e.target.value);
-            setFeedback("");
+            setFeedback('');
           }}
           className="px-3 py-2 bg-gray-200 text-black rounded"
         >
           <option value="">Selecione um barbeiro</option>
-          {barberOptions.map((b) => (
+          {barberOptions.map(b => (
             <option key={b.id} value={b.id}>
               {b.name}
             </option>
@@ -335,7 +364,7 @@ const BarbeirosConfig: React.FC = () => {
         <>
           <section>
             <h2 className="text-2xl font-semibold mb-4">Horários Semanais</h2>
-            {(Object.keys(barberConfig.horarios) as (keyof BarberConfig["horarios"])[]).map((day) =>
+            {(Object.keys(barberConfig.horarios) as (keyof BarberConfig['horarios'])[]).map(day =>
               renderDayForm(day)
             )}
           </section>
@@ -350,9 +379,7 @@ const BarbeirosConfig: React.FC = () => {
                 <input
                   type="date"
                   value={newException.date}
-                  onChange={(e) =>
-                    setNewException({ ...newException, date: e.target.value })
-                  }
+                  onChange={e => setNewException({ ...newException, date: e.target.value })}
                   className="px-2 py-1 text-black rounded"
                 />
               </div>
@@ -360,10 +387,10 @@ const BarbeirosConfig: React.FC = () => {
                 <label className="block">Status:</label>
                 <select
                   value={newException.status}
-                  onChange={(e) =>
+                  onChange={e =>
                     setNewException({
                       ...newException,
-                      status: e.target.value as "blocked" | "available",
+                      status: e.target.value as 'blocked' | 'available',
                     })
                   }
                   className="px-2 py-1 text-black rounded"
@@ -372,16 +399,14 @@ const BarbeirosConfig: React.FC = () => {
                   <option value="available">Liberado</option>
                 </select>
               </div>
-              {newException.status === "available" && (
+              {newException.status === 'available' && (
                 <div className="flex flex-wrap gap-4 items-center mb-2">
                   <div>
                     <label className="block">Abertura:</label>
                     <input
                       type="time"
-                      value={newException.open || ""}
-                      onChange={(e) =>
-                        setNewException({ ...newException, open: e.target.value })
-                      }
+                      value={newException.open || ''}
+                      onChange={e => setNewException({ ...newException, open: e.target.value })}
                       className="px-2 py-1 text-black rounded"
                     />
                   </div>
@@ -389,10 +414,8 @@ const BarbeirosConfig: React.FC = () => {
                     <label className="block">Fechamento:</label>
                     <input
                       type="time"
-                      value={newException.close || ""}
-                      onChange={(e) =>
-                        setNewException({ ...newException, close: e.target.value })
-                      }
+                      value={newException.close || ''}
+                      onChange={e => setNewException({ ...newException, close: e.target.value })}
                       className="px-2 py-1 text-black rounded"
                     />
                   </div>
@@ -403,9 +426,7 @@ const BarbeirosConfig: React.FC = () => {
                 <input
                   type="text"
                   value={newException.message}
-                  onChange={(e) =>
-                    setNewException({ ...newException, message: e.target.value })
-                  }
+                  onChange={e => setNewException({ ...newException, message: e.target.value })}
                   className="w-full px-2 py-1 text-black rounded"
                 />
               </div>
@@ -427,11 +448,11 @@ const BarbeirosConfig: React.FC = () => {
                       className="flex justify-between items-center bg-gray-700 p-2 rounded"
                     >
                       <span>
-                        {ex.date} – {ex.status}{" "}
-                        {ex.status === "available" && ex.open && ex.close
+                        {ex.date} – {ex.status}{' '}
+                        {ex.status === 'available' && ex.open && ex.close
                           ? `(Abertura: ${ex.open}, Fechamento: ${ex.close})`
-                          : ""}
-                        {ex.message ? ` - ${ex.message}` : ""}
+                          : ''}
+                        {ex.message ? ` - ${ex.message}` : ''}
                       </span>
                       <button
                         onClick={() => handleRemoveException(index)}
@@ -461,6 +482,10 @@ const BarbeirosConfig: React.FC = () => {
       )}
     </div>
   );
+};
+
+const _getGlobalHorarios = () => {
+  /* função */
 };
 
 export default BarbeirosConfig;

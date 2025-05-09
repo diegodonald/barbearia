@@ -1,33 +1,23 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import useAuth from "@/hooks/useAuth";
-import { ExtendedUser } from "@/types/ExtendedUser";
-import { useRouter } from "next/navigation";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  getDocs,
-  doc,
-  updateDoc,
-  deleteDoc,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { useOperatingHours } from "@/hooks/useOperatingHours";
-import { OperatingHours } from "@/types/common";
-import errorMessages from "@/utils/errorMessages";
+import React, { useState, useEffect } from 'react';
+import useAuth from '@/hooks/useAuth';
+import { ExtendedUser } from '@/types/ExtendedUser';
+import { useRouter } from 'next/navigation';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useOperatingHours } from '@/hooks/useOperatingHours';
+import { OperatingHours } from '@/types/common';
+import errorMessages from '@/utils/errorMessages';
 import { useAgendamentos } from '@/hooks/useAgendamentos';
 import { useBarbeiros } from '@/hooks/useBarbeiros';
 import { useServicos } from '@/hooks/useServicos';
 import { useAgendamentosOperations } from '@/hooks/useAgendamentosOperations';
 
-
 function getDayName(date: Date): keyof OperatingHours {
-  const days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  const days = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
   return days[date.getDay()] as keyof OperatingHours;
 }
 
@@ -38,19 +28,20 @@ function generateSlots(
   end: string,
   interval: number
 ): string[] {
-  const [openHour, openMinute] = open.split(":").map(Number);
+  const [openHour, openMinute] = open.split(':').map(Number);
   const startTotal = openHour * 60 + openMinute;
-  const [endHour, endMinute] = end.split(":").map(Number);
+  const [endHour, endMinute] = end.split(':').map(Number);
   const endTotal = endHour * 60 + endMinute;
 
-  let breakStartTotal = -1, breakEndTotal = -1;
+  let breakStartTotal = -1,
+    breakEndTotal = -1;
   if (breakStart && breakEnd) {
-    const [bsHour, bsMinute] = breakStart.split(":").map(Number);
+    const [bsHour, bsMinute] = breakStart.split(':').map(Number);
     breakStartTotal = bsHour * 60 + bsMinute;
-    const [beHour, beMinute] = breakEnd.split(":").map(Number);
+    const [beHour, beMinute] = breakEnd.split(':').map(Number);
     breakEndTotal = beHour * 60 + beMinute;
   }
-  
+
   const slots: string[] = [];
   for (let time = startTotal; time < endTotal - interval + 1; time += interval) {
     if (breakStartTotal >= 0 && breakEndTotal > 0) {
@@ -63,19 +54,19 @@ function generateSlots(
         continue;
       }
     }
-    
+
     const hour = Math.floor(time / 60);
     const minute = time % 60;
-    slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
+    slots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
   }
-  
+
   return slots;
 }
 
 function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite: string[] } {
-  const manha = slots.filter((slot) => slot < "12:00");
-  const tarde = slots.filter((slot) => slot >= "12:00" && slot < "17:00");
-  const noite = slots.filter((slot) => slot >= "17:00");
+  const manha = slots.filter(slot => slot < '12:00');
+  const tarde = slots.filter(slot => slot >= '12:00' && slot < '17:00');
+  const noite = slots.filter(slot => slot >= '17:00');
   return { manha, tarde, noite };
 }
 
@@ -107,7 +98,7 @@ interface ServiceOption {
 }
 
 const formatDate = (dateStr: string): string => {
-  const parts = dateStr.split("-");
+  const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 };
@@ -139,7 +130,7 @@ const AdminDashboard: React.FC = () => {
 
   // Substitua o código que busca serviços
   const { servicos, loading: servicosLoading } = useServicos();
-  
+
   useEffect(() => {
     if (!servicosLoading) {
       setServiceOptions(servicos);
@@ -148,7 +139,7 @@ const AdminDashboard: React.FC = () => {
 
   // Substitua o código que busca barbeiros
   const { barbeiros, loading: barbeirosLoading } = useBarbeiros();
-  
+
   useEffect(() => {
     if (!barbeirosLoading) {
       setBarberOptions(barbeiros);
@@ -158,16 +149,16 @@ const AdminDashboard: React.FC = () => {
   const { updateAgendamento, deleteAgendamento } = useAgendamentosOperations();
 
   // Estados dos filtros
-  const [filterDate, setFilterDate] = useState<string>("");
-  const [filterBarber, setFilterBarber] = useState<string>("");
+  const [filterDate, setFilterDate] = useState<string>('');
+  const [filterBarber, setFilterBarber] = useState<string>('');
 
   // Estado para controle da edição inline
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
   const [editingDate, setEditingDate] = useState<Date | null>(null);
-  const [editingTimeSlot, setEditingTimeSlot] = useState<string>("");
-  const [editingService, setEditingService] = useState<string>("");
+  const [editingTimeSlot, setEditingTimeSlot] = useState<string>('');
+  const [editingService, setEditingService] = useState<string>('');
   const [editingBarber, setEditingBarber] = useState<BarberOption | null>(null);
-  const [editFeedback, setEditFeedback] = useState<string>("");
+  const [editFeedback, setEditFeedback] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<{
     manha: string[];
     tarde: string[];
@@ -177,14 +168,14 @@ const AdminDashboard: React.FC = () => {
   // Estados para opções dos dropdowns (Serviços e Barbeiros)
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
   const [barberOptions, setBarberOptions] = useState<BarberWithSchedule[]>([]);
-  
+
   // Mapeia cada barberId para os slots já reservados
   const [bookedSlotsByBarber, setBookedSlotsByBarber] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     if (!loading && user) {
-      if ((user as ExtendedUser).role !== "admin") {
-        router.push("/");
+      if ((user as ExtendedUser).role !== 'admin') {
+        router.push('/');
       }
     }
   }, [loading, user, router]);
@@ -193,21 +184,18 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     if (!editingDate) return;
     const normalizedDateStr = getLocalDateString(editingDate);
-    
+
     // Excluir o próprio agendamento em edição dos ocupados
     const currentAppointmentId = editingAppointment?.id;
-    
-    const q = query(
-      collection(db, "agendamentos"),
-      where("dateStr", "==", normalizedDateStr)
-    );
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+
+    const q = query(collection(db, 'agendamentos'), where('dateStr', '==', normalizedDateStr));
+
+    const unsubscribe = onSnapshot(q, querySnapshot => {
       const map: Record<string, string[]> = {};
-      querySnapshot.forEach((docSnap) => {
+      querySnapshot.forEach(docSnap => {
         // Ignorar o agendamento atual sendo editado
         if (docSnap.id === currentAppointmentId) return;
-        
+
         const data = docSnap.data();
         const bId = data.barberId;
         let slots: string[] = [];
@@ -224,7 +212,7 @@ const AdminDashboard: React.FC = () => {
       });
       setBookedSlotsByBarber(map);
     });
-    
+
     return () => unsubscribe();
   }, [editingDate, editingAppointment?.id]);
 
@@ -238,7 +226,7 @@ const AdminDashboard: React.FC = () => {
     // Encontra o barbeiro selecionado completo com horários
     const selectedBarber = barberOptions.find(b => b.id === editingBarber.id);
     if (!selectedBarber) {
-      setEditFeedback("Barbeiro não encontrado");
+      setEditFeedback('Barbeiro não encontrado');
       setAvailableSlots({ manha: [], tarde: [], noite: [] });
       return;
     }
@@ -250,10 +238,10 @@ const AdminDashboard: React.FC = () => {
     // Verifica exceções
     const barberExceptions = selectedBarber.exceptions || [];
     const exception = barberExceptions.find((ex: any) => ex.date === dateStr);
-    
+
     if (exception) {
-      if (exception.status === "blocked") {
-        setEditFeedback("Este dia está bloqueado para o barbeiro");
+      if (exception.status === 'blocked') {
+        setEditFeedback('Este dia está bloqueado para o barbeiro');
         setAvailableSlots({ manha: [], tarde: [], noite: [] });
         return;
       }
@@ -261,12 +249,12 @@ const AdminDashboard: React.FC = () => {
 
     // Obtém a configuração de horário
     let dayConfig;
-    
-    if (exception?.status === "available" && exception.open && exception.close) {
+
+    if (exception?.status === 'available' && exception.open && exception.close) {
       dayConfig = {
         open: exception.open,
         close: exception.close,
-        active: true
+        active: true,
       };
     } else {
       // Verificar configuração individual do barbeiro
@@ -279,7 +267,7 @@ const AdminDashboard: React.FC = () => {
     }
 
     if (!dayConfig || !dayConfig.active || !dayConfig.open || !dayConfig.close) {
-      setEditFeedback("Não há configuração de horário para este dia");
+      setEditFeedback('Não há configuração de horário para este dia');
       setAvailableSlots({ manha: [], tarde: [], noite: [] });
       return;
     }
@@ -298,20 +286,20 @@ const AdminDashboard: React.FC = () => {
     const availableTimeSlots = allSlots.filter(slot => !bookedSlots.includes(slot));
 
     if (availableTimeSlots.length === 0) {
-      setEditFeedback("Não há horários disponíveis para esta data");
+      setEditFeedback('Não há horários disponíveis para esta data');
       setAvailableSlots({ manha: [], tarde: [], noite: [] });
       return;
     }
 
     setAvailableSlots(groupSlots(availableTimeSlots));
-    setEditFeedback("");
+    setEditFeedback('');
   }, [editingDate, editingBarber, bookedSlotsByBarber, barberOptions, operatingHours]);
 
   const setTodayFilter = () => {
     const today = new Date();
     const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
     setFilterDate(`${yyyy}-${mm}-${dd}`);
   };
 
@@ -319,19 +307,19 @@ const AdminDashboard: React.FC = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const yyyy = tomorrow.getFullYear();
-    const mm = String(tomorrow.getMonth() + 1).padStart(2, "0");
-    const dd = String(tomorrow.getDate()).padStart(2, "0");
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const dd = String(tomorrow.getDate()).padStart(2, '0');
     setFilterDate(`${yyyy}-${mm}-${dd}`);
   };
 
   const clearFilters = () => {
-    setFilterDate("");
-    setFilterBarber("");
+    setFilterDate('');
+    setFilterBarber('');
   };
 
-  const uniqueBarbers = Array.from(new Set(appointments.map((app) => app.barber))).sort();
+  const uniqueBarbers = Array.from(new Set(appointments.map(app => app.barber))).sort();
 
-  const filteredAppointments = appointments.filter((appt) => {
+  const filteredAppointments = appointments.filter(appt => {
     const matchDate = filterDate ? appt.dateStr === filterDate : true;
     const matchBarber = filterBarber ? appt.barber === filterBarber : true;
     return matchDate && matchBarber;
@@ -342,22 +330,22 @@ const AdminDashboard: React.FC = () => {
     const dateComparison = a.dateStr.localeCompare(b.dateStr);
     if (dateComparison !== 0) return dateComparison;
 
-    const timeA = a.timeSlot?.split(" - ")[0] || "";
-    const timeB = b.timeSlot?.split(" - ")[0] || "";
+    const timeA = a.timeSlot?.split(' - ')[0] || '';
+    const timeB = b.timeSlot?.split(' - ')[0] || '';
     return timeA.localeCompare(timeB);
   });
 
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
-    
+
     // Inicializa os estados de edição
     const [year, month, day] = appt.dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
     setEditingDate(date);
-    
-    setEditingTimeSlot(appt.timeSlots?.[0] || "");
+
+    setEditingTimeSlot(appt.timeSlots?.[0] || '');
     setEditingService(appt.service);
-    
+
     // Encontra o barbeiro correspondente
     const barber = barberOptions.find(b => b.id === appt.barberId);
     setEditingBarber(barber || null);
@@ -366,15 +354,21 @@ const AdminDashboard: React.FC = () => {
   const handleCancelEdit = () => {
     setEditingAppointment(null);
     setEditingDate(null);
-    setEditingTimeSlot("");
-    setEditingService("");
+    setEditingTimeSlot('');
+    setEditingService('');
     setEditingBarber(null);
-    setEditFeedback("");
+    setEditFeedback('');
   };
 
   const handleSaveEdit = async () => {
-    if (!editingAppointment || !editingDate || !editingTimeSlot || !editingService || !editingBarber) {
-      setEditFeedback("Preencha todos os campos");
+    if (
+      !editingAppointment ||
+      !editingDate ||
+      !editingTimeSlot ||
+      !editingService ||
+      !editingBarber
+    ) {
+      setEditFeedback('Preencha todos os campos');
       return;
     }
 
@@ -382,60 +376,60 @@ const AdminDashboard: React.FC = () => {
       // Encontrar o serviço selecionado para obter a duração
       const service = serviceOptions.find(s => s.name === editingService);
       if (!service) {
-        setEditFeedback("Serviço não encontrado");
+        setEditFeedback('Serviço não encontrado');
         return;
       }
 
       // Calcular os slots necessários baseados na duração
       const slotsNeeded = Math.ceil(service.duration / 30);
-      
+
       // Verificar se há slots suficientes disponíveis após o horário inicial
       const allSlots = [
         ...availableSlots.manha,
         ...availableSlots.tarde,
-        ...availableSlots.noite
+        ...availableSlots.noite,
       ].sort();
-      
+
       const startIndex = allSlots.indexOf(editingTimeSlot);
       if (startIndex === -1) {
         setEditFeedback(errorMessages.slotNotAvailable);
         return;
       }
-      
+
       if (startIndex + slotsNeeded > allSlots.length) {
         setEditFeedback(errorMessages.serviceExceedsClosing);
         return;
       }
-      
+
       // Verificar se os slots são consecutivos
       const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
-      
+
       // Verificar se algum slot está ocupado para o barbeiro escolhido
       const barberBooked = bookedSlotsByBarber[editingBarber.id] || [];
       if (requiredSlots.some(slot => barberBooked.includes(slot))) {
         setEditFeedback(errorMessages.slotAlreadyBooked);
         return;
       }
-      
+
       // Verificar se os slots cruzam intervalo
       for (let i = 1; i < requiredSlots.length; i++) {
-        const prevSlot = requiredSlots[i-1];
+        const prevSlot = requiredSlots[i - 1];
         const currSlot = requiredSlots[i];
-        
-        const [prevHour, prevMin] = prevSlot.split(":").map(Number);
-        const [currHour, currMin] = currSlot.split(":").map(Number);
-        
+
+        const [prevHour, prevMin] = prevSlot.split(':').map(Number);
+        const [currHour, currMin] = currSlot.split(':').map(Number);
+
         const prevTotalMins = prevHour * 60 + prevMin;
         const currTotalMins = currHour * 60 + currMin;
-        
+
         if (currTotalMins - prevTotalMins !== 30) {
           setEditFeedback(errorMessages.serviceCrossesBreak);
           return;
         }
       }
-      
+
       const dateStr = getLocalDateString(editingDate);
-      
+
       const result = await updateAgendamento(editingAppointment.id, {
         dateStr: dateStr,
         timeSlots: requiredSlots,
@@ -445,15 +439,15 @@ const AdminDashboard: React.FC = () => {
         barberId: editingBarber.id,
         status: editingAppointment.status,
       });
-      
+
       if (result.success) {
         handleCancelEdit();
       } else {
-        setEditFeedback(result.error || "Erro ao atualizar agendamento");
+        setEditFeedback(result.error || 'Erro ao atualizar agendamento');
       }
     } catch (error) {
-      console.error("Erro ao atualizar agendamento:", error);
-      setEditFeedback("Erro ao salvar. Tente novamente.");
+      console.error('Erro ao atualizar agendamento:', error);
+      setEditFeedback('Erro ao salvar. Tente novamente.');
     }
   };
 
@@ -461,10 +455,10 @@ const AdminDashboard: React.FC = () => {
     try {
       const result = await deleteAgendamento(appt.id);
       if (!result.success) {
-        console.error("Erro ao cancelar agendamento:", result.error);
+        console.error('Erro ao cancelar agendamento:', result.error);
       }
     } catch (error) {
-      console.error("Erro ao cancelar agendamento:", error);
+      console.error('Erro ao cancelar agendamento:', error);
     }
   };
 
@@ -483,7 +477,7 @@ const AdminDashboard: React.FC = () => {
           <input
             type="date"
             value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
+            onChange={e => setFilterDate(e.target.value)}
             className="px-3 py-2 bg-gray-200 text-black rounded"
           />
         </div>
@@ -491,11 +485,11 @@ const AdminDashboard: React.FC = () => {
           <label className="block mb-1">Filtrar por Barbeiro:</label>
           <select
             value={filterBarber}
-            onChange={(e) => setFilterBarber(e.target.value)}
+            onChange={e => setFilterBarber(e.target.value)}
             className="px-3 py-2 bg-gray-200 text-black rounded"
           >
             <option value="">Todos</option>
-            {uniqueBarbers.map((barber) => (
+            {uniqueBarbers.map(barber => (
               <option key={barber} value={barber}>
                 {barber}
               </option>
@@ -529,7 +523,7 @@ const AdminDashboard: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white text-black p-6 rounded-lg shadow-lg max-w-2xl w-full max-h-90vh overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Editar Agendamento</h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block mb-1">Cliente</label>
@@ -540,75 +534,77 @@ const AdminDashboard: React.FC = () => {
                   className="px-3 py-2 bg-gray-200 w-full rounded"
                 />
               </div>
-              
+
               <div>
                 <label className="block mb-1">Data</label>
                 <DatePicker
                   selected={editingDate}
                   onChange={(date: Date | null) => {
                     setEditingDate(date);
-                    setEditingTimeSlot("");
+                    setEditingTimeSlot('');
                   }}
                   dateFormat="dd/MM/yyyy"
                   className="px-3 py-2 border w-full rounded"
                 />
               </div>
-              
+
               <div>
                 <label className="block mb-1">Serviço</label>
                 <select
                   value={editingService}
-                  onChange={(e) => setEditingService(e.target.value)}
+                  onChange={e => setEditingService(e.target.value)}
                   className="px-3 py-2 bg-white border w-full rounded"
                 >
-                  {serviceOptions.map((service) => (
+                  {serviceOptions.map(service => (
                     <option key={service.name} value={service.name}>
                       {service.name} ({service.duration} min)
                     </option>
                   ))}
                 </select>
               </div>
-              
+
               <div>
                 <label className="block mb-1">Barbeiro</label>
                 <select
-                  value={editingBarber?.id || ""}
-                  onChange={(e) => {
+                  value={editingBarber?.id || ''}
+                  onChange={e => {
                     const selected = barberOptions.find(b => b.id === e.target.value);
                     setEditingBarber(selected || null);
-                    setEditingTimeSlot("");
+                    setEditingTimeSlot('');
                   }}
                   className="px-3 py-2 bg-white border w-full rounded"
                 >
                   <option value="">Selecione um barbeiro</option>
-                  {barberOptions.map((barber) => (
+                  {barberOptions.map(barber => (
                     <option key={barber.id} value={barber.id}>
                       {barber.name}
                     </option>
                   ))}
                 </select>
               </div>
-              
+
               {editingDate && editingBarber && (
                 <div>
                   <label className="block mb-1">Horário</label>
                   <div className="space-y-2">
                     {Object.entries(availableSlots).map(([period, slots]) => {
                       if (slots.length === 0) return null;
-                      
+
                       return (
                         <div key={period}>
                           <h4 className="font-medium capitalize">
-                            {period === "manha" ? "manhã" : period === "tarde" ? "tarde" : "noite"}
+                            {period === 'manha' ? 'manhã' : period === 'tarde' ? 'tarde' : 'noite'}
                           </h4>
                           <div className="flex flex-wrap gap-2 mt-1">
-                            {slots.map((slot) => (
+                            {slots.map(slot => (
                               <button
                                 key={slot}
                                 type="button"
                                 onClick={() => setEditingTimeSlot(slot)}
                                 className={`px-3 py-1 border rounded ${
-                                  editingTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
+                                  editingTimeSlot === slot
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-white text-black'
                                 }`}
                               >
                                 {slot}
@@ -619,21 +615,21 @@ const AdminDashboard: React.FC = () => {
                       );
                     })}
                   </div>
-                  
-                  {(availableSlots.manha.length === 0 && 
-                    availableSlots.tarde.length === 0 && 
-                    availableSlots.noite.length === 0) && (
-                    <p className="text-red-500 mt-2">Não há horários disponíveis para esta data e barbeiro</p>
-                  )}
+
+                  {availableSlots.manha.length === 0 &&
+                    availableSlots.tarde.length === 0 &&
+                    availableSlots.noite.length === 0 && (
+                      <p className="text-red-500 mt-2">
+                        Não há horários disponíveis para esta data e barbeiro
+                      </p>
+                    )}
                 </div>
               )}
-              
+
               {editFeedback && (
-                <div className="p-2 bg-red-100 text-red-700 rounded">
-                  {editFeedback}
-                </div>
+                <div className="p-2 bg-red-100 text-red-700 rounded">{editFeedback}</div>
               )}
-              
+
               <div className="flex justify-end gap-2 mt-4">
                 <button
                   onClick={handleCancelEdit}
@@ -670,7 +666,7 @@ const AdminDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="text-gray-600 divide-y">
-              {sortedAppointments.map((appointment) => (
+              {sortedAppointments.map(appointment => (
                 <tr key={appointment.id} className="hover:bg-gray-50">
                   <td className="py-4 px-6">{formatDate(appointment.dateStr)}</td>
                   <td className="py-4 px-6">{appointment.timeSlot}</td>
@@ -687,7 +683,7 @@ const AdminDashboard: React.FC = () => {
                     </button>
                     <button
                       onClick={() => {
-                        if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
+                        if (window.confirm('Tem certeza que deseja cancelar este agendamento?')) {
                           handleCancelAppointment(appointment);
                         }
                       }}
@@ -707,3 +703,10 @@ const AdminDashboard: React.FC = () => {
 };
 
 export default AdminDashboard;
+
+function getLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = ('0' + (date.getMonth() + 1)).slice(-2);
+  const day = ('0' + date.getDate()).slice(-2);
+  return `${year}-${month}-${day}`;
+}
