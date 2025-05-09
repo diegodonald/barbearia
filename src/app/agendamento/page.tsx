@@ -7,7 +7,6 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { collection, doc, getDoc, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useOperatingHours } from '@/hooks/useOperatingHours';
 import errorMessages from '@/utils/errorMessages';
@@ -813,7 +812,6 @@ const Agendamento: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header />
       {showPopup && (
         <div className="fixed top-1/3 left-1/2 transform -translate-x-1/2 z-50">
           <div className="bg-white text-black p-6 rounded shadow">

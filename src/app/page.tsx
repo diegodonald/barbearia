@@ -1,12 +1,8 @@
-import Header from '../components/Header';
 import Footer from '../components/Footer';
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <Header />
-
       {/* Seção Hero */}
       <main className="flex flex-col items-center justify-center py-20 px-4">
         <div className="text-center">

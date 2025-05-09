@@ -1,11 +1,10 @@
-"use client";
+'use client';
 
-import React, { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import BarbeirosConfig from "./BarbeirosConfig";
-import useAuth from "@/hooks/useAuth";
+import React, { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Footer from '@/components/Footer';
+import BarbeirosConfig from './BarbeirosConfig';
+import useAuth from '@/hooks/useAuth';
 
 const Page: React.FC = () => {
   const { user, loading } = useAuth();
@@ -13,8 +12,8 @@ const Page: React.FC = () => {
 
   useEffect(() => {
     // Se não estiver carregando e o usuário não for admin nem barber, redireciona para o login.
-    if (!loading && (!user || (user.role !== "admin" && user.role !== "barber"))) {
-      router.push("/login");
+    if (!loading && (!user || (user.role !== 'admin' && user.role !== 'barber'))) {
+      router.push('/login');
     }
   }, [user, loading, router]);
 
@@ -24,7 +23,6 @@ const Page: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header />
       <main className="py-20 px-4">
         <BarbeirosConfig />
       </main>

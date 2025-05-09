@@ -1,33 +1,63 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import Link from "next/link";
-import { auth } from "@/lib/firebase";
-import { signOut } from "firebase/auth";
-import { useRouter } from "next/navigation";
-import useAuth from "@/hooks/useAuth";
+import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import useAuth from '@/hooks/useAuth';
 
-const Cabecalho: React.FC = () => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
-  const { user, loading } = useAuth();
-  const router = useRouter();
+const Header: React.FC = () => {
+  const { user, loading, signOut } = useAuth();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-  // Verifica se o usuário é admin e se é barbeiro
-  const isAdmin = user && user.role === "admin";
-  const isBarber = user && user.role === "barber";
+  // Garante que o componente só renderiza conteúdo dinâmico no cliente
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      // Redireciona para a página de login após o logout
-      router.push("/login");
-    } catch (error) {
-      console.error("Erro ao deslogar:", error);
-    }
+    await signOut();
+    setIsMenuOpen(false);
   };
 
-  // Função de debugging
-  console.log("Navigation render:", { user, loading });
+  const isBarber = user?.role === 'barber';
+  const isAdmin = user?.role === 'admin';
+
+  // Renderização condicional simplificada para o estado de autenticação
+  const renderAuthSection = () => {
+    // Se ainda não estamos no cliente, não mostra nada até o componente montar
+    if (!isClient) return <span className="text-sm">Carregando...</span>;
+
+    if (loading) {
+      return <span className="text-sm">Carregando...</span>;
+    }
+
+    if (user) {
+      return (
+        <>
+          <span className="text-sm">{user.name || user.email}</span>
+          <button
+            onClick={handleLogout}
+            className="bg-red-500 text-sm px-3 py-1 rounded hover:bg-red-600"
+          >
+            Sair
+          </button>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <Link href="/login">
+          <span className="hover:underline cursor-pointer text-sm">Entrar</span>
+        </Link>
+        <Link href="/signup">
+          <span className="bg-blue-500 text-sm px-3 py-1 rounded hover:underline cursor-pointer">
+            Cadastre-se
+          </span>
+        </Link>
+      </>
+    );
+  };
 
   return (
     <header className="bg-black text-white px-6 py-4">
@@ -54,56 +84,26 @@ const Cabecalho: React.FC = () => {
           <Link href="/agendamento">
             <span className="hover:text-gray-300 cursor-pointer">Reservar</span>
           </Link>
-          {/* Exibe "Meus Agendamentos" somente se o usuário não for admin nem barbeiro */}
-          {user && !(isBarber || isAdmin) && (
+          {isClient && user && !(isBarber || isAdmin) && (
             <Link href="/meus-agendamentos">
-              <span className="hover:text-gray-300 cursor-pointer">
-                Meus Agendamentos
-              </span>
+              <span className="hover:text-gray-300 cursor-pointer">Meus Agendamentos</span>
             </Link>
           )}
-          {isBarber && (
+          {isClient && isBarber && (
             <Link href="/barbeiro">
-              <span className="hover:text-gray-300 cursor-pointer">
-                Sua Agenda
-              </span>
+              <span className="hover:text-gray-300 cursor-pointer">Sua Agenda</span>
             </Link>
           )}
-          {isAdmin && (
+          {isClient && isAdmin && (
             <Link href="/admin">
-              <span className="hover:text-gray-300 cursor-pointer">
-                Painel
-              </span>
+              <span className="hover:text-gray-300 cursor-pointer">Painel</span>
             </Link>
           )}
         </nav>
 
         {/* Desktop Authentication and Reservar Agora Button */}
         <div className="hidden md:flex items-center space-x-4">
-          {loading ? (
-            <span>Carregando...</span>
-          ) : user ? (
-            <>
-              <span>{user.name || user.email}</span>
-              <button
-                onClick={handleLogout}
-                className="bg-red-500 px-3 py-1 rounded hover:bg-red-600"
-              >
-                Sair
-              </button>
-            </>
-          ) : (
-            <>
-              <Link href="/login">
-                <span className="hover:underline cursor-pointer">Entrar</span>
-              </Link>
-              <Link href="/signup">
-                <span className="bg-blue-500 px-3 py-1 rounded hover:underline cursor-pointer">
-                  Cadastre-se
-                </span>
-              </Link>
-            </>
-          )}
+          {renderAuthSection()}
           <Link href="/agendamento">
             <span className="bg-yellow-500 text-black font-semibold px-4 py-2 rounded hover:bg-yellow-600 transition cursor-pointer">
               Reservar Agora
@@ -111,11 +111,11 @@ const Cabecalho: React.FC = () => {
           </Link>
         </div>
 
-        {/* Mobile Hamburger Button */}
+        {/* Mobile Hamburger */}
         <div className="md:hidden">
           <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="focus:outline-none"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="text-white focus:outline-none"
           >
             <svg
               className="w-6 h-6"
@@ -124,158 +124,148 @@ const Cabecalho: React.FC = () => {
               viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 6h16M4 12h16M4 18h16"
-              />
+              {isMenuOpen ? (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              ) : (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              )}
             </svg>
           </button>
         </div>
       </div>
 
-      {/* Mobile Menu Dropdown */}
-      {mobileMenuOpen && (
-        <nav className="md:hidden mt-4">
-          <ul className="flex flex-col space-y-4">
-            <li>
-              <Link href="/">
-                <span
-                  className="hover:text-gray-300 cursor-pointer"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Início
-                </span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/blog">
-                <span
-                  className="hover:text-gray-300 cursor-pointer"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Blog
-                </span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/sobre">
-                <span
-                  className="hover:text-gray-300 cursor-pointer"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Sobre Nós
-                </span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/servicos">
-                <span
-                  className="hover:text-gray-300 cursor-pointer"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Serviços
-                </span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/agendamento">
-                <span
-                  className="hover:text-gray-300 cursor-pointer"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Reservar
-                </span>
-              </Link>
-            </li>
-            {user && !(isBarber || isAdmin) && (
-              <li>
-                <Link href="/meus-agendamentos">
-                  <span
-                    className="hover:text-gray-300 cursor-pointer"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Meus Agendamentos
-                  </span>
-                </Link>
-              </li>
-            )}
-            {isBarber && (
-              <li>
-                <Link href="/barbeiro">
-                  <span
-                    className="hover:text-gray-300 cursor-pointer"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Sua Agenda
-                  </span>
-                </Link>
-              </li>
-            )}
-            {isAdmin && (
-              <li>
-                <Link href="/admin">
-                  <span
-                    className="hover:text-gray-300 cursor-pointer"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Painel
-                  </span>
-                </Link>
-              </li>
-            )}
-          </ul>
-          {/* Mobile Authentication and Reservar Agora Button */}
-          <div className="mt-4 flex flex-col space-y-2">
-            {loading ? (
-              <span>Carregando...</span>
+      {/* Mobile Menu */}
+      {isMenuOpen && (
+        <div className="md:hidden mt-4 flex flex-col space-y-4">
+          <Link href="/">
+            <span
+              className="block py-2 hover:bg-gray-900 px-2 rounded"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Início
+            </span>
+          </Link>
+          <Link href="/blog">
+            <span
+              className="block py-2 hover:bg-gray-900 px-2 rounded"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Blog
+            </span>
+          </Link>
+          <Link href="/sobre">
+            <span
+              className="block py-2 hover:bg-gray-900 px-2 rounded"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Sobre Nós
+            </span>
+          </Link>
+          <Link href="/servicos">
+            <span
+              className="block py-2 hover:bg-gray-900 px-2 rounded"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Serviços
+            </span>
+          </Link>
+          <Link href="/agendamento">
+            <span
+              className="block py-2 hover:bg-gray-900 px-2 rounded"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Reservar
+            </span>
+          </Link>
+          {isClient && user && !(isBarber || isAdmin) && (
+            <Link href="/meus-agendamentos">
+              <span
+                className="block py-2 hover:bg-gray-900 px-2 rounded"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Meus Agendamentos
+              </span>
+            </Link>
+          )}
+          {isClient && isBarber && (
+            <Link href="/barbeiro">
+              <span
+                className="block py-2 hover:bg-gray-900 px-2 rounded"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Sua Agenda
+              </span>
+            </Link>
+          )}
+          {isClient && isAdmin && (
+            <Link href="/admin">
+              <span
+                className="block py-2 hover:bg-gray-900 px-2 rounded"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Painel
+              </span>
+            </Link>
+          )}
+
+          {/* Mobile Authentication */}
+          <div className="pt-4 border-t border-gray-700">
+            {!isClient || loading ? (
+              <span className="block text-center py-2">Carregando...</span>
             ) : user ? (
               <>
-                <span>{user.name || user.email}</span>
+                <span className="block text-center py-2">{user.name || user.email}</span>
                 <button
-                  onClick={() => {
-                    handleLogout();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="bg-red-500 px-3 py-1 rounded hover:bg-red-600 transition"
+                  onClick={handleLogout}
+                  className="w-full text-center py-2 bg-red-500 rounded hover:bg-red-600"
                 >
                   Sair
                 </button>
               </>
             ) : (
-              <div className="flex flex-col space-y-2">
+              <>
                 <Link href="/login">
                   <span
-                    className="hover:underline cursor-pointer"
-                    onClick={() => setMobileMenuOpen(false)}
+                    className="block text-center py-2 hover:bg-gray-900 rounded"
+                    onClick={() => setIsMenuOpen(false)}
                   >
                     Entrar
                   </span>
                 </Link>
                 <Link href="/signup">
                   <span
-                    className="bg-blue-500 px-3 py-1 rounded hover:underline cursor-pointer"
-                    onClick={() => setMobileMenuOpen(false)}
+                    className="block text-center py-2 bg-blue-500 rounded hover:bg-blue-600"
+                    onClick={() => setIsMenuOpen(false)}
                   >
                     Cadastre-se
                   </span>
                 </Link>
-              </div>
+              </>
             )}
+
             <Link href="/agendamento">
               <span
-                className="bg-yellow-500 text-black font-semibold px-4 py-2 rounded hover:bg-yellow-600 transition cursor-pointer"
-                onClick={() => setMobileMenuOpen(false)}
+                className="block text-center py-2 mt-2 bg-yellow-500 text-black font-semibold rounded hover:bg-yellow-600"
+                onClick={() => setIsMenuOpen(false)}
               >
                 Reservar Agora
               </span>
             </Link>
           </div>
-        </nav>
+        </div>
       )}
     </header>
   );
 };
 
-export default Cabecalho;
+export default Header;
