@@ -2,12 +2,7 @@
 
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { auth, db } from '@/lib/firebase';
-import {
-  onAuthStateChanged,
-  signOut as firebaseSignOut,
-  signInWithEmailAndPassword,
-  User,
-} from 'firebase/auth';
+import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { OperatingHours, Exception } from '@/types/common';
 
@@ -39,15 +34,68 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<ExtendedUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   useEffect(() => {
-    console.log('AuthProvider: Iniciando listener de autenticação');
+    // Garante que só executamos no cliente
+    if (typeof window === 'undefined') return;
 
-    // Enforce immediate auth check
-    const currentUser = auth.currentUser;
-    console.log('Auth current user on mount:', currentUser?.uid);
+    console.log('AuthProvider: Iniciando verificação de autenticação');
+    let isMounted = true;
 
+    // Configura um timeout global que será limpo se o auth resolver antes
+    const timeoutId = setTimeout(() => {
+      if (isMounted) {
+        console.log('AuthProvider: Timeout acionado, finalizando estado de carregamento');
+        setLoading(false);
+      }
+    }, 3000);
+
+    // Verifica se já temos um usuário no auth.currentUser logo no início
+    const checkInitialUser = async () => {
+      try {
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          console.log('AuthProvider: Já existe um usuário logado:', currentUser.uid);
+
+          // Buscar dados adicionais do usuário
+          const userDocRef = doc(db, 'usuarios', currentUser.uid);
+          const userDoc = await getDoc(userDocRef);
+
+          if (userDoc.exists() && isMounted) {
+            const userData = userDoc.data();
+            setUser({
+              uid: currentUser.uid,
+              email: currentUser.email,
+              role: userData.role || 'user',
+              name: userData.name,
+              horarios: userData.horarios,
+              exceptions: userData.exceptions || [],
+            });
+          } else if (isMounted) {
+            setUser({
+              uid: currentUser.uid,
+              email: currentUser.email,
+              role: 'user',
+            });
+          }
+
+          if (isMounted) setLoading(false);
+        }
+      } catch (err) {
+        console.error('Erro na verificação inicial:', err);
+      }
+
+      setAuthInitialized(true);
+    };
+
+    // Executa verificação inicial antes do onAuthStateChanged
+    checkInitialUser();
+
+    // Configura o listener para mudanças futuras
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
+      if (!isMounted) return;
+
       try {
         console.log('AuthProvider: Estado de auth alterado', firebaseUser?.uid);
 
@@ -56,10 +104,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const userDocRef = doc(db, 'usuarios', firebaseUser.uid);
           const userDoc = await getDoc(userDocRef);
 
-          if (userDoc.exists()) {
+          if (userDoc.exists() && isMounted) {
             const userData = userDoc.data();
-            console.log('AuthProvider: Dados do usuário encontrados', userData);
-
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email,
@@ -68,41 +114,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               horarios: userData.horarios,
               exceptions: userData.exceptions || [],
             });
-          } else {
-            console.log('AuthProvider: Dados do usuário não encontrados, usando info básica');
+          } else if (isMounted) {
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email,
               role: 'user',
             });
           }
-        } else {
-          console.log('AuthProvider: Nenhum usuário Firebase');
+        } else if (isMounted) {
           setUser(null);
         }
       } catch (err) {
         console.error('AuthProvider: Erro ao autenticar usuário:', err);
-        setError('Falha ao carregar dados do usuário.');
+        if (isMounted) setError('Falha ao carregar dados do usuário.');
       } finally {
-        console.log('AuthProvider: Definindo loading como false');
-        setLoading(false);
+        if (isMounted) {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
       }
     });
 
-    // Garante que o estado de carregamento seja definido como false após um tempo
-    const timeout = setTimeout(() => {
-      if (loading) {
-        console.log('AuthProvider: Forçando loading como false após timeout');
-        setLoading(false);
-      }
-    }, 5000);
-
     return () => {
-      console.log('AuthProvider: Cancelando listener de auth');
+      isMounted = false;
+      clearTimeout(timeoutId);
       unsubscribe();
-      clearTimeout(timeout);
+      console.log('AuthProvider: Limpeza concluída');
     };
-  }, [loading]); // ← Adicionar loading como dependência
+  }, []);
 
   const signOut = async () => {
     try {
@@ -115,8 +154,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setError('Falha ao fazer logout.');
     }
   };
-
-  console.log('AuthProvider render:', { user, loading, error });
 
   return (
     <AuthContext.Provider value={{ user, loading, error, signOut }}>

@@ -1,11 +1,10 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import useAuth from "@/hooks/useAuth";
+import { useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import Footer from '@/components/Footer';
+import useAuth from '@/hooks/useAuth';
 
 const AdminMain: React.FC = () => {
   const { user, loading } = useAuth();
@@ -13,20 +12,16 @@ const AdminMain: React.FC = () => {
 
   // Redireciona caso o usuário não seja admin
   useEffect(() => {
-    if (!loading && user?.role !== "admin") {
-      router.push("/"); // Redireciona para a home ou outra rota adequada.
+    if (!loading && user?.role !== 'admin') {
+      router.push('/'); // Redireciona para a home ou outra rota adequada.
     }
   }, [user, loading, router]);
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header />
-
       <div className="py-8">
         <div className="max-w-4xl mx-auto bg-gray-900 p-8 rounded shadow">
-          <h1 className="text-3xl font-bold text-center mb-6">
-            Painel Administrativo
-          </h1>
+          <h1 className="text-3xl font-bold text-center mb-6">Painel Administrativo</h1>
           <div className="flex flex-col items-center gap-4">
             <Link
               href="/admin/promotion"

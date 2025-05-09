@@ -1,26 +1,18 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import useAuth from "@/hooks/useAuth";
-import {
-  collection,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  updateDoc,
-  doc,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Footer from '@/components/Footer';
+import useAuth from '@/hooks/useAuth';
+import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 // Interface para os serviços armazenados (valor numérico)
 interface Service {
   id?: string;
   name: string;
   duration: string; // duração em minutos (entrada: string)
-  value: number;    // valor armazenado com duas casas decimais
+  value: number; // valor armazenado com duas casas decimais
 }
 
 // Interface para a entrada do novo serviço (valor em string para não exibir 0 inicialmente)
@@ -36,38 +28,40 @@ export default function AdminServicosPage() {
 
   // Proteção de rota: se o usuário não for admin, redireciona para home
   useEffect(() => {
-    if (!loading && (!user || user.role !== "admin")) {
-      router.push("/");
+    if (!loading && (!user || user.role !== 'admin')) {
+      router.push('/');
     }
   }, [user, loading, router]);
 
   // Estado para armazenar a lista de serviços e os dados do novo serviço a ser inserido
   const [services, setServices] = useState<Service[]>([]);
   const [newService, setNewService] = useState<ServiceInput>({
-    name: "",
-    duration: "",
-    value: "",
+    name: '',
+    duration: '',
+    value: '',
   });
 
   // Estado para controlar o serviço que está sendo editado (caso haja edição)
-  const [editingService, setEditingService] = useState<(ServiceInput & { id: string }) | null>(null);
+  const [editingService, setEditingService] = useState<(ServiceInput & { id: string }) | null>(
+    null
+  );
 
   // Busca os serviços cadastrados na coleção "servicos"
   const fetchServices = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, "servicos"));
-      const list: Service[] = querySnapshot.docs.map((docSnap) => ({
+      const querySnapshot = await getDocs(collection(db, 'servicos'));
+      const list: Service[] = querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...docSnap.data(),
       })) as Service[];
       setServices(list);
     } catch (error) {
-      console.error("Erro ao buscar serviços:", error);
+      console.error('Erro ao buscar serviços:', error);
     }
   };
 
   useEffect(() => {
-    if (!loading && user && user.role === "admin") {
+    if (!loading && user && user.role === 'admin') {
       fetchServices();
     }
   }, [loading, user]);
@@ -80,32 +74,32 @@ export default function AdminServicosPage() {
       !newService.value.trim() ||
       parseFloat(newService.value) <= 0
     ) {
-      alert("Preencha todos os campos com valores válidos.");
+      alert('Preencha todos os campos com valores válidos.');
       return;
     }
     try {
       const numericValue = parseFloat(parseFloat(newService.value).toFixed(2));
-      await addDoc(collection(db, "servicos"), {
+      await addDoc(collection(db, 'servicos'), {
         name: newService.name,
         duration: newService.duration,
         value: numericValue,
       });
-      setNewService({ name: "", duration: "", value: "" });
+      setNewService({ name: '', duration: '', value: '' });
       fetchServices();
     } catch (error) {
-      console.error("Erro ao adicionar serviço:", error);
+      console.error('Erro ao adicionar serviço:', error);
     }
   };
 
   // Deleta um serviço
   const handleDeleteService = async (id: string | undefined) => {
     if (!id) return;
-    if (!confirm("Deseja realmente deletar esse serviço?")) return;
+    if (!confirm('Deseja realmente deletar esse serviço?')) return;
     try {
-      await deleteDoc(doc(db, "servicos", id));
+      await deleteDoc(doc(db, 'servicos', id));
       fetchServices();
     } catch (error) {
-      console.error("Erro ao deletar serviço:", error);
+      console.error('Erro ao deletar serviço:', error);
     }
   };
 
@@ -133,12 +127,12 @@ export default function AdminServicosPage() {
       !editingService.value.trim() ||
       parseFloat(editingService.value) <= 0
     ) {
-      alert("Preencha todos os campos com valores válidos.");
+      alert('Preencha todos os campos com valores válidos.');
       return;
     }
     try {
       const numericValue = parseFloat(parseFloat(editingService.value).toFixed(2));
-      await updateDoc(doc(db, "servicos", editingService.id), {
+      await updateDoc(doc(db, 'servicos', editingService.id), {
         name: editingService.name,
         duration: editingService.duration,
         value: numericValue,
@@ -146,17 +140,16 @@ export default function AdminServicosPage() {
       setEditingService(null);
       fetchServices();
     } catch (error) {
-      console.error("Erro ao atualizar serviço:", error);
+      console.error('Erro ao atualizar serviço:', error);
     }
   };
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header />
       <main className="py-20 px-4">
         {/* Botão de voltar para /admin */}
         <button
-          onClick={() => router.push("/admin")}
+          onClick={() => router.push('/admin')}
           className="mb-4 bg-gray-700 px-4 py-2 rounded hover:bg-gray-600 transition"
         >
           Voltar
@@ -170,27 +163,21 @@ export default function AdminServicosPage() {
             type="text"
             placeholder="Nome do Serviço"
             value={newService.name}
-            onChange={(e) =>
-              setNewService({ ...newService, name: e.target.value })
-            }
+            onChange={e => setNewService({ ...newService, name: e.target.value })}
             className="bg-gray-800 border border-gray-600 px-4 py-2 rounded mb-2 w-full"
           />
           <input
             type="text"
             placeholder="Duração em minutos"
             value={newService.duration}
-            onChange={(e) =>
-              setNewService({ ...newService, duration: e.target.value })
-            }
+            onChange={e => setNewService({ ...newService, duration: e.target.value })}
             className="bg-gray-800 border border-gray-600 px-4 py-2 rounded mb-2 w-full"
           />
           <input
             type="number"
             placeholder="Valor"
             value={newService.value}
-            onChange={(e) =>
-              setNewService({ ...newService, value: e.target.value })
-            }
+            onChange={e => setNewService({ ...newService, value: e.target.value })}
             className="bg-gray-800 border border-gray-600 px-4 py-2 rounded mb-2 w-full"
           />
           <button
@@ -208,14 +195,14 @@ export default function AdminServicosPage() {
             <p>Nenhum serviço cadastrado.</p>
           ) : (
             <ul className="space-y-4">
-              {services.map((service) => (
+              {services.map(service => (
                 <li key={service.id} className="bg-gray-800 p-4 rounded shadow">
                   {editingService && editingService.id === service.id ? (
                     <div>
                       <input
                         type="text"
                         value={editingService.name}
-                        onChange={(e) =>
+                        onChange={e =>
                           setEditingService({
                             ...editingService,
                             name: e.target.value,
@@ -227,7 +214,7 @@ export default function AdminServicosPage() {
                         type="text"
                         placeholder="Duração em minutos"
                         value={editingService.duration}
-                        onChange={(e) =>
+                        onChange={e =>
                           setEditingService({
                             ...editingService,
                             duration: e.target.value,
@@ -239,7 +226,7 @@ export default function AdminServicosPage() {
                         type="number"
                         placeholder="Valor"
                         value={editingService.value}
-                        onChange={(e) =>
+                        onChange={e =>
                           setEditingService({
                             ...editingService,
                             value: e.target.value,
@@ -266,12 +253,7 @@ export default function AdminServicosPage() {
                     <div>
                       <h3 className="text-xl font-semibold">{service.name}</h3>
                       <p>Duração: {service.duration} min</p>
-                      <p>
-                        Valor: R${" "}
-                        {Number(service.value)
-                          .toFixed(2)
-                          .replace(".", ",")}
-                      </p>
+                      <p>Valor: R$ {Number(service.value).toFixed(2).replace('.', ',')}</p>
                       <div className="flex space-x-4 mt-4">
                         <button
                           onClick={() => handleStartEditing(service)}

@@ -1,16 +1,14 @@
-"use client";
+'use client';
 
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import AdminDashboard from "./AdminDashboard";
-import { useRouter } from "next/navigation";
+import Footer from '@/components/Footer';
+import AdminDashboard from './AdminDashboard';
+import { useRouter } from 'next/navigation';
 
 export default function AdminDashboardPage() {
   const router = useRouter();
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header />
       <main className="py-20 px-4">
         <button
           onClick={() => router.back()}

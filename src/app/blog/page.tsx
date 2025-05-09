@@ -1,11 +1,9 @@
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+import Footer from '@/components/Footer';
 
 export default function Blog() {
   return (
     <div className="min-h-screen bg-black text-white">
-      {/* Cabeçalho */}
-      <Header />
+      {/* Remova o Header daqui */}
 
       {/* Conteúdo Principal */}
       <main className="flex flex-col items-center justify-center flex-grow py-20 px-4">

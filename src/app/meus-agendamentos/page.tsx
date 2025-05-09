@@ -1,36 +1,35 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import useAuth from "@/hooks/useAuth";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
-import { db } from "@/lib/firebase";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import { ExtendedUser } from "@/hooks/useAuth";
-import { useOperatingHours } from "@/hooks/useOperatingHours";
-import errorMessages from "@/utils/errorMessages";
-import { useAgendamentos } from "@/hooks/useAgendamentos";
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import useAuth from '@/hooks/useAuth';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { db } from '@/lib/firebase';
+import Footer from '@/components/Footer';
+import { ExtendedUser } from '@/hooks/useAuth';
+import { useOperatingHours } from '@/hooks/useOperatingHours';
+import errorMessages from '@/utils/errorMessages';
+import { useAgendamentos } from '@/hooks/useAgendamentos';
 
 // Função auxiliar para converter datas em "YYYY-MM-DD" usando o horário local
 function getLocalDateString(date: Date): string {
   const year = date.getFullYear();
-  const month = ("0" + (date.getMonth() + 1)).slice(-2);
-  const day = ("0" + date.getDate()).slice(-2);
+  const month = ('0' + (date.getMonth() + 1)).slice(-2);
+  const day = ('0' + date.getDate()).slice(-2);
   return `${year}-${month}-${day}`;
 }
 
 // Função auxiliar para formatar a data em "DD/MM/YYYY"
 const formatDate = (dateStr: string): string => {
-  const parts = dateStr.split("-");
+  const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
+};
 
 // Obtém o nome do dia a partir da data
 function getDayName(date: Date): keyof OperatingHours {
-  const days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  const days = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
   return days[date.getDay()] as keyof OperatingHours;
 }
 
@@ -42,19 +41,20 @@ function generateSlots(
   end: string,
   interval: number
 ): string[] {
-  const [openHour, openMinute] = open.split(":").map(Number);
+  const [openHour, openMinute] = open.split(':').map(Number);
   const startTotal = openHour * 60 + openMinute;
-  const [endHour, endMinute] = end.split(":").map(Number);
+  const [endHour, endMinute] = end.split(':').map(Number);
   const endTotal = endHour * 60 + endMinute;
 
-  let breakStartTotal = -1, breakEndTotal = -1;
+  let breakStartTotal = -1,
+    breakEndTotal = -1;
   if (breakStart && breakEnd) {
-    const [bsHour, bsMinute] = breakStart.split(":").map(Number);
+    const [bsHour, bsMinute] = breakStart.split(':').map(Number);
     breakStartTotal = bsHour * 60 + bsMinute;
-    const [beHour, beMinute] = breakEnd.split(":").map(Number);
+    const [beHour, beMinute] = breakEnd.split(':').map(Number);
     breakEndTotal = beHour * 60 + beMinute;
   }
-  
+
   const slots: string[] = [];
   for (let time = startTotal; time < endTotal - interval + 1; time += interval) {
     if (breakStartTotal >= 0 && breakEndTotal > 0) {
@@ -67,20 +67,20 @@ function generateSlots(
         continue;
       }
     }
-    
+
     const hour = Math.floor(time / 60);
     const minute = time % 60;
-    slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`);
+    slots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
   }
-  
+
   return slots;
 }
 
 // Agrupa os slots em períodos para exibição (manhã, tarde e noite)
 function groupSlots(slots: string[]): { manha: string[]; tarde: string[]; noite: string[] } {
-  const manha = slots.filter((slot) => slot < "12:00");
-  const tarde = slots.filter((slot) => slot >= "12:00" && slot < "17:00");
-  const noite = slots.filter((slot) => slot >= "17:00");
+  const manha = slots.filter(slot => slot < '12:00');
+  const tarde = slots.filter(slot => slot >= '12:00' && slot < '17:00');
+  const noite = slots.filter(slot => slot >= '17:00');
   return { manha, tarde, noite };
 }
 
@@ -128,12 +128,12 @@ interface BarberOption {
 
 // Configuração global padrão (usada se necessário)
 const defaultOperatingHours: OperatingHours = {
-  segunda: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
-  terça: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
-  quarta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
-  quinta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
-  sexta: { open: "08:00", breakStart: "12:00", breakEnd: "13:30", close: "18:00", active: true },
-  sábado: { open: "09:00", breakStart: "12:00", breakEnd: "13:30", close: "14:00", active: true },
+  segunda: { open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00', active: true },
+  terça: { open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00', active: true },
+  quarta: { open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00', active: true },
+  quinta: { open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00', active: true },
+  sexta: { open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00', active: true },
+  sábado: { open: '09:00', breakStart: '12:00', breakEnd: '13:30', close: '14:00', active: true },
   domingo: { active: false },
 };
 
@@ -153,14 +153,15 @@ function getEffectiveDayConfig(
   }
 
   // Verificar exceções
-  const effectiveExceptions = barber.exceptions && barber.exceptions.length > 0 ? barber.exceptions : globalExceptions;
+  const effectiveExceptions =
+    barber.exceptions && barber.exceptions.length > 0 ? barber.exceptions : globalExceptions;
   if (effectiveExceptions) {
     const exception = effectiveExceptions.find((ex: any) => ex.date === normalizedDate);
     if (exception) {
-      if (exception.status === "blocked") {
+      if (exception.status === 'blocked') {
         return null;
       }
-      if (exception.status === "available" && exception.open && exception.close) {
+      if (exception.status === 'available' && exception.open && exception.close) {
         return { open: exception.open, close: exception.close, active: true };
       }
     }
@@ -168,14 +169,19 @@ function getEffectiveDayConfig(
 
   // Se individualConfig foi encontrada, use-a.
   if (individualConfig) {
-    return individualConfig && individualConfig.active && individualConfig.open && individualConfig.close
+    return individualConfig &&
+      individualConfig.active &&
+      individualConfig.open &&
+      individualConfig.close
       ? individualConfig
       : null;
   }
 
   // Caso contrário, use a configuração global.
   const globalConfig = globalOperatingHours[dayName];
-  return globalConfig && globalConfig.active && globalConfig.open && globalConfig.close ? globalConfig : null;
+  return globalConfig && globalConfig.active && globalConfig.open && globalConfig.close
+    ? globalConfig
+    : null;
 }
 
 const ClientAppointments: React.FC = () => {
@@ -186,22 +192,24 @@ const ClientAppointments: React.FC = () => {
   // Estados básicos
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(true);
-  const [filterDate, setFilterDate] = useState<string>("");
+  const [filterDate, setFilterDate] = useState<string>('');
 
   // Estado para controle da edição inline de um agendamento
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
   const [editingDate, setEditingDate] = useState<Date | null>(null);
-  const [editingTimeSlot, setEditingTimeSlot] = useState<string>("");
-  const [editingService, setEditingService] = useState<string>("");
+  const [editingTimeSlot, setEditingTimeSlot] = useState<string>('');
+  const [editingService, setEditingService] = useState<string>('');
   const [editingBarber, setEditingBarber] = useState<BarberOption | null>(null);
 
   // Estados para opções dinâmicas
-  const [serviceOptions, setServiceOptions] = useState<{name: string; duration: number; value: number}[]>([]);
+  const [serviceOptions, setServiceOptions] = useState<
+    { name: string; duration: number; value: number }[]
+  >([]);
   const [barberOptions, setBarberOptions] = useState<BarberOption[]>([]);
 
   // Estado para feedback de operação (edição e cancelamento)
-  const [feedback, setFeedback] = useState<string>("");
-  const [editFeedback, setEditFeedback] = useState<string>("");
+  const [feedback, setFeedback] = useState<string>('');
+  const [editFeedback, setEditFeedback] = useState<string>('');
 
   // Disponibilidade de horários
   const [availableSlots, setAvailableSlots] = useState<{
@@ -216,7 +224,7 @@ const ClientAppointments: React.FC = () => {
   // Verifica autenticação; se não estiver logado, redireciona
   useEffect(() => {
     if (!loading && !user) {
-      router.push("/login");
+      router.push('/login');
     }
   }, [user, loading, router]);
 
@@ -229,7 +237,7 @@ const ClientAppointments: React.FC = () => {
         ...ag,
         timeSlot: ag.timeSlot || '', // Ensure timeSlot is never undefined
       })) as Appointment[];
-      
+
       setAppointments(mappedAppointments);
       setLoadingAppointments(false);
     }
@@ -239,9 +247,9 @@ const ClientAppointments: React.FC = () => {
   useEffect(() => {
     async function fetchServiceOptions() {
       try {
-        const q = query(collection(db, "servicos"));
+        const q = query(collection(db, 'servicos'));
         const snapshot = await getDocs(q);
-        const services = snapshot.docs.map((doc) => {
+        const services = snapshot.docs.map(doc => {
           const data = doc.data();
           return {
             name: data.name,
@@ -251,7 +259,7 @@ const ClientAppointments: React.FC = () => {
         });
         setServiceOptions(services);
       } catch (error) {
-        console.error("Erro ao buscar serviços:", error);
+        console.error('Erro ao buscar serviços:', error);
       }
     }
     fetchServiceOptions();
@@ -261,38 +269,38 @@ const ClientAppointments: React.FC = () => {
   useEffect(() => {
     async function fetchBarberOptions() {
       try {
-        const barbeirosQuery = query(collection(db, "barbeiros"), where("active", "==", true));
+        const barbeirosQuery = query(collection(db, 'barbeiros'), where('active', '==', true));
         const barbeirosSnapshot = await getDocs(barbeirosQuery);
-        
-        const barberPromises = barbeirosSnapshot.docs.map(async (doc) => {
+
+        const barberPromises = barbeirosSnapshot.docs.map(async doc => {
           const barberData = doc.data();
           const barberId = doc.id;
-          
+
           // Buscar horários na coleção "horarios"
-          const horariosRef = doc(db, "horarios", barberId);
+          const horariosRef = doc(db, 'horarios', barberId);
           const horariosSnap = await getDoc(horariosRef);
           const horarios = horariosSnap.exists() ? horariosSnap.data() : null;
-          
+
           // Buscar exceções
-          const excecoesRef = collection(db, "excecoes", barberId, "datas");
+          const excecoesRef = collection(db, 'excecoes', barberId, 'datas');
           const excecoesSnap = await getDocs(excecoesRef);
           const exceptions = excecoesSnap.docs.map(doc => ({
             id: doc.id,
-            ...doc.data()
+            ...doc.data(),
           }));
-          
+
           return {
             id: barberId,
-            name: barberData.name || "Sem nome",
+            name: barberData.name || 'Sem nome',
             horarios: horarios,
-            exceptions: exceptions
+            exceptions: exceptions,
           };
         });
-        
+
         const barbers = await Promise.all(barberPromises);
         setBarberOptions(barbers);
       } catch (error) {
-        console.error("Erro ao buscar barbeiros:", error);
+        console.error('Erro ao buscar barbeiros:', error);
       }
     }
     fetchBarberOptions();
@@ -302,21 +310,18 @@ const ClientAppointments: React.FC = () => {
   useEffect(() => {
     if (!editingDate) return;
     const normalizedDateStr = getLocalDateString(editingDate);
-    
+
     // Excluir o próprio agendamento em edição dos ocupados
     const currentAppointmentId = editingAppointment?.id;
-    
-    const q = query(
-      collection(db, "agendamentos"),
-      where("dateStr", "==", normalizedDateStr)
-    );
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+
+    const q = query(collection(db, 'agendamentos'), where('dateStr', '==', normalizedDateStr));
+
+    const unsubscribe = onSnapshot(q, querySnapshot => {
       const map: Record<string, string[]> = {};
-      querySnapshot.forEach((docSnap) => {
+      querySnapshot.forEach(docSnap => {
         // Ignorar o agendamento atual sendo editado
         if (docSnap.id === currentAppointmentId) return;
-        
+
         const data = docSnap.data();
         const bId = data.barberId;
         let slots: string[] = [];
@@ -333,7 +338,7 @@ const ClientAppointments: React.FC = () => {
       });
       setBookedSlotsByBarber(map);
     });
-    
+
     return () => unsubscribe();
   }, [editingDate, editingAppointment?.id]);
 
@@ -347,7 +352,7 @@ const ClientAppointments: React.FC = () => {
     // Encontra o barbeiro selecionado completo com horários
     const selectedBarber = barberOptions.find(b => b.id === editingBarber.id);
     if (!selectedBarber) {
-      setEditFeedback("Barbeiro não encontrado");
+      setEditFeedback('Barbeiro não encontrado');
       setAvailableSlots({ manha: [], tarde: [], noite: [] });
       return;
     }
@@ -359,10 +364,10 @@ const ClientAppointments: React.FC = () => {
     // Verifica exceções
     const barberExceptions = selectedBarber.exceptions || [];
     const exception = barberExceptions.find((ex: any) => ex.date === dateStr);
-    
+
     if (exception) {
-      if (exception.status === "blocked") {
-        setEditFeedback("Este dia está bloqueado para o barbeiro");
+      if (exception.status === 'blocked') {
+        setEditFeedback('Este dia está bloqueado para o barbeiro');
         setAvailableSlots({ manha: [], tarde: [], noite: [] });
         return;
       }
@@ -370,12 +375,12 @@ const ClientAppointments: React.FC = () => {
 
     // Obtém a configuração de horário
     let dayConfig;
-    
-    if (exception?.status === "available" && exception.open && exception.close) {
+
+    if (exception?.status === 'available' && exception.open && exception.close) {
       dayConfig = {
         open: exception.open,
         close: exception.close,
-        active: true
+        active: true,
       };
     } else {
       // Verificar configuração individual do barbeiro
@@ -388,7 +393,7 @@ const ClientAppointments: React.FC = () => {
     }
 
     if (!dayConfig || !dayConfig.active || !dayConfig.open || !dayConfig.close) {
-      setEditFeedback("Não há configuração de horário para este dia");
+      setEditFeedback('Não há configuração de horário para este dia');
       setAvailableSlots({ manha: [], tarde: [], noite: [] });
       return;
     }
@@ -407,21 +412,21 @@ const ClientAppointments: React.FC = () => {
     const availableTimeSlots = allSlots.filter(slot => !bookedSlots.includes(slot));
 
     if (availableTimeSlots.length === 0) {
-      setEditFeedback("Não há horários disponíveis para esta data");
+      setEditFeedback('Não há horários disponíveis para esta data');
       setAvailableSlots({ manha: [], tarde: [], noite: [] });
       return;
     }
 
     setAvailableSlots(groupSlots(availableTimeSlots));
-    setEditFeedback("");
+    setEditFeedback('');
   }, [editingDate, editingBarber, bookedSlotsByBarber, barberOptions, operatingHours]);
 
   // Funções de Filtro: hoje, amanhã e limpar filtro para a listagem de agendamentos
   const setTodayFilter = () => {
     const today = new Date();
     const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
     setFilterDate(`${yyyy}-${mm}-${dd}`);
   };
 
@@ -429,61 +434,67 @@ const ClientAppointments: React.FC = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const yyyy = tomorrow.getFullYear();
-    const mm = String(tomorrow.getMonth() + 1).padStart(2, "0");
-    const dd = String(tomorrow.getDate()).padStart(2, "0");
+    const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const dd = String(tomorrow.getDate()).padStart(2, '0');
     setFilterDate(`${yyyy}-${mm}-${dd}`);
   };
 
   const clearFilters = () => {
-    setFilterDate("");
+    setFilterDate('');
   };
 
   // Filtra os agendamentos existentes de acordo com a data selecionada
-  const filteredAppointments = appointments.filter((appt) =>
+  const filteredAppointments = appointments.filter(appt =>
     filterDate ? appt.dateStr === filterDate : true
   );
 
   // Handler para iniciar a edição de um agendamento
   const handleStartEditing = (appt: Appointment) => {
     setEditingAppointment({ ...appt });
-    
+
     // Inicializa os estados de edição
     const [year, month, day] = appt.dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
     setEditingDate(date);
-    
-    setEditingTimeSlot(appt.timeSlots?.[0] || "");
+
+    setEditingTimeSlot(appt.timeSlots?.[0] || '');
     setEditingService(appt.service);
-    
+
     // Encontra o barbeiro correspondente
     const barber = barberOptions.find(b => b.id === appt.barberId);
     setEditingBarber(barber || null);
-    
-    setEditFeedback("");
+
+    setEditFeedback('');
   };
 
   // Handler para cancelar a edição
   const handleCancelEdit = () => {
     setEditingAppointment(null);
     setEditingDate(null);
-    setEditingTimeSlot("");
-    setEditingService("");
+    setEditingTimeSlot('');
+    setEditingService('');
     setEditingBarber(null);
-    setEditFeedback("");
+    setEditFeedback('');
   };
 
   // Handler para salvar a edição de um agendamento
   const handleSaveEdit = async () => {
-    if (!editingAppointment || !editingDate || !editingTimeSlot || !editingService || !editingBarber) {
-      setEditFeedback("Preencha todos os campos");
+    if (
+      !editingAppointment ||
+      !editingDate ||
+      !editingTimeSlot ||
+      !editingService ||
+      !editingBarber
+    ) {
+      setEditFeedback('Preencha todos os campos');
       return;
     }
 
     try {
       // Encontrar o serviço selecionado para obter a duração
-      const service = serviceOptions.find((s) => s.name === editingService);
+      const service = serviceOptions.find(s => s.name === editingService);
       if (!service) {
-        setEditFeedback("Serviço não encontrado");
+        setEditFeedback('Serviço não encontrado');
         return;
       }
 
@@ -511,7 +522,7 @@ const ClientAppointments: React.FC = () => {
       // Verificar se os slots necessários estão ocupados
       const requiredSlots = allSlots.slice(startIndex, startIndex + slotsNeeded);
       const barberBooked = bookedSlotsByBarber[editingBarber.id] || [];
-      if (requiredSlots.some((slot) => barberBooked.includes(slot))) {
+      if (requiredSlots.some(slot => barberBooked.includes(slot))) {
         setEditFeedback(errorMessages.slotAlreadyBooked); // Mensagem correta para slots ocupados
         return;
       }
@@ -521,8 +532,8 @@ const ClientAppointments: React.FC = () => {
         const prevSlot = requiredSlots[i - 1];
         const currSlot = requiredSlots[i];
 
-        const [prevHour, prevMin] = prevSlot.split(":").map(Number);
-        const [currHour, currMin] = currSlot.split(":").map(Number);
+        const [prevHour, prevMin] = prevSlot.split(':').map(Number);
+        const [currHour, currMin] = currSlot.split(':').map(Number);
 
         const prevTotalMins = prevHour * 60 + prevMin;
         const currTotalMins = currHour * 60 + currMin;
@@ -536,7 +547,7 @@ const ClientAppointments: React.FC = () => {
       // Atualizar o agendamento no banco de dados
       const dateStr = getLocalDateString(editingDate);
 
-      await updateDoc(doc(db, "agendamentos", editingAppointment.id), {
+      await updateDoc(doc(db, 'agendamentos', editingAppointment.id), {
         dateStr: dateStr,
         timeSlots: requiredSlots,
         service: editingService,
@@ -547,22 +558,22 @@ const ClientAppointments: React.FC = () => {
       });
 
       handleCancelEdit();
-      setFeedback("Agendamento atualizado com sucesso!");
+      setFeedback('Agendamento atualizado com sucesso!');
     } catch (error) {
-      console.error("Erro ao atualizar agendamento:", error);
-      setEditFeedback("Erro ao salvar. Tente novamente.");
+      console.error('Erro ao atualizar agendamento:', error);
+      setEditFeedback('Erro ao salvar. Tente novamente.');
     }
   };
 
   // Handler para cancelar (excluir) um agendamento
   const handleCancelAppointment = async (appt: Appointment) => {
-    if (!confirm("Deseja realmente cancelar este agendamento?")) return;
+    if (!confirm('Deseja realmente cancelar este agendamento?')) return;
     try {
-      await deleteDoc(doc(db, "agendamentos", appt.id));
-      setFeedback("Agendamento cancelado com sucesso!");
+      await deleteDoc(doc(db, 'agendamentos', appt.id));
+      setFeedback('Agendamento cancelado com sucesso!');
     } catch (error) {
-      console.error("Erro ao cancelar agendamento:", error);
-      setFeedback("Erro ao cancelar agendamento. Tente novamente.");
+      console.error('Erro ao cancelar agendamento:', error);
+      setFeedback('Erro ao cancelar agendamento. Tente novamente.');
     }
   };
 
@@ -572,7 +583,6 @@ const ClientAppointments: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header />
       <main className="py-20 px-4">
         <h1 className="text-3xl font-bold text-center mb-8">Meus Agendamentos</h1>
 
@@ -583,7 +593,7 @@ const ClientAppointments: React.FC = () => {
             <input
               type="date"
               value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
+              onChange={e => setFilterDate(e.target.value)}
               className="px-3 py-2 bg-gray-200 text-black rounded"
             />
           </div>
@@ -615,7 +625,7 @@ const ClientAppointments: React.FC = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white text-black p-6 rounded-lg shadow-lg max-w-2xl w-full max-h-90vh overflow-y-auto">
               <h2 className="text-xl font-bold mb-4">Editar Agendamento</h2>
-              
+
               <div className="space-y-4">
                 <div>
                   <label className="block mb-1">Cliente</label>
@@ -626,75 +636,81 @@ const ClientAppointments: React.FC = () => {
                     className="px-3 py-2 bg-gray-200 w-full rounded"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block mb-1">Data</label>
                   <DatePicker
                     selected={editingDate}
                     onChange={(date: Date | null) => {
                       setEditingDate(date);
-                      setEditingTimeSlot("");
+                      setEditingTimeSlot('');
                     }}
                     dateFormat="dd/MM/yyyy"
                     className="px-3 py-2 border w-full rounded"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block mb-1">Serviço</label>
                   <select
                     value={editingService}
-                    onChange={(e) => setEditingService(e.target.value)}
+                    onChange={e => setEditingService(e.target.value)}
                     className="px-3 py-2 bg-white border w-full rounded"
                   >
-                    {serviceOptions.map((service) => (
+                    {serviceOptions.map(service => (
                       <option key={service.name} value={service.name}>
                         {service.name} ({service.duration} min)
                       </option>
                     ))}
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block mb-1">Barbeiro</label>
                   <select
-                    value={editingBarber?.id || ""}
-                    onChange={(e) => {
+                    value={editingBarber?.id || ''}
+                    onChange={e => {
                       const selected = barberOptions.find(b => b.id === e.target.value);
                       setEditingBarber(selected || null);
-                      setEditingTimeSlot("");
+                      setEditingTimeSlot('');
                     }}
                     className="px-3 py-2 bg-white border w-full rounded"
                   >
                     <option value="">Selecione um barbeiro</option>
-                    {barberOptions.map((barber) => (
+                    {barberOptions.map(barber => (
                       <option key={barber.id} value={barber.id}>
                         {barber.name}
                       </option>
                     ))}
                   </select>
                 </div>
-                
+
                 {editingDate && editingBarber && (
                   <div>
                     <label className="block mb-1">Horário</label>
                     <div className="space-y-2">
                       {Object.entries(availableSlots).map(([period, slots]) => {
                         if (slots.length === 0) return null;
-                        
+
                         return (
                           <div key={period}>
                             <h4 className="font-medium capitalize">
-                              {period === "manha" ? "manhã" : period === "tarde" ? "tarde" : "noite"}
+                              {period === 'manha'
+                                ? 'manhã'
+                                : period === 'tarde'
+                                  ? 'tarde'
+                                  : 'noite'}
                             </h4>
                             <div className="flex flex-wrap gap-2 mt-1">
-                              {slots.map((slot) => (
+                              {slots.map(slot => (
                                 <button
                                   key={slot}
                                   type="button"
                                   onClick={() => setEditingTimeSlot(slot)}
                                   className={`px-3 py-1 border rounded ${
-                                    editingTimeSlot === slot ? "bg-blue-500 text-white" : "bg-white text-black"
+                                    editingTimeSlot === slot
+                                      ? 'bg-blue-500 text-white'
+                                      : 'bg-white text-black'
                                   }`}
                                 >
                                   {slot}
@@ -705,21 +721,21 @@ const ClientAppointments: React.FC = () => {
                         );
                       })}
                     </div>
-                    
-                    {(availableSlots.manha.length === 0 && 
-                      availableSlots.tarde.length === 0 && 
-                      availableSlots.noite.length === 0) && (
-                      <p className="text-red-500 mt-2">Não há horários disponíveis para esta data e barbeiro</p>
-                    )}
+
+                    {availableSlots.manha.length === 0 &&
+                      availableSlots.tarde.length === 0 &&
+                      availableSlots.noite.length === 0 && (
+                        <p className="text-red-500 mt-2">
+                          Não há horários disponíveis para esta data e barbeiro
+                        </p>
+                      )}
                   </div>
                 )}
-                
+
                 {editFeedback && (
-                  <div className="p-2 bg-red-100 text-red-700 rounded">
-                    {editFeedback}
-                  </div>
+                  <div className="p-2 bg-red-100 text-red-700 rounded">{editFeedback}</div>
                 )}
-                
+
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     onClick={handleCancelEdit}
@@ -756,7 +772,7 @@ const ClientAppointments: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredAppointments.map((app) => (
+                {filteredAppointments.map(app => (
                   <tr key={app.id}>
                     <td className="px-4 py-2 border">{formatDate(app.dateStr)}</td>
                     <td className="px-4 py-2 border">{app.timeSlot}</td>
