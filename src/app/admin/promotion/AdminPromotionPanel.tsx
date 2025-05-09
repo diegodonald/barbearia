@@ -215,33 +215,75 @@ const AdminPromotionPanel: React.FC = () => {
   };
 
   // Função para excluir um usuário
-  const deleteUserAccount = async (userId: string, userName: string) => {
-    if (
-      !window.confirm(
-        `Tem certeza que deseja excluir permanentemente o usuário ${userName}? Esta ação não pode ser desfeita.`
-      )
-    ) {
-      return;
-    }
-
+  const deleteUser = async (userId: string, currentRole: string) => {
     try {
       setError('');
+      setSuccess('');
 
-      // 1. Excluir documento do usuário no Firestore
-      const userDocRef = doc(db, 'usuarios', userId);
-      await deleteDoc(userDocRef);
+      // 1. Excluir o documento da coleção usuarios
+      const userRef = doc(db, 'usuarios', userId);
+      await deleteDoc(userRef);
 
-      // 2. Chamar função do Firebase para excluir o usuário da autenticação
-      const functions = getFunctions();
-      const deleteUserAuth = httpsCallable(functions, 'deleteUserAuth');
+      // 2. Se for barbeiro, excluir da coleção barbeiros e dados relacionados
+      if (currentRole === 'barber') {
+        // Excluir da coleção barbeiros
+        const barberRef = doc(db, 'barbeiros', userId);
+        await deleteDoc(barberRef);
 
-      // Adicione logs para ajudar no debugging
-      console.log('Chamando deleteUserAuth com UID:', userId);
+        // Excluir da coleção horarios
+        const horariosRef = doc(db, 'horarios', userId);
+        await deleteDoc(horariosRef);
 
-      const result = await deleteUserAuth({ uid: userId });
-      console.log('Resultado da exclusão:', result.data);
+        // Excluir da coleção exceções (subcoleção)
+        try {
+          const excecoesRef = collection(db, 'excecoes', userId, 'datas');
+          const excecoesSnap = await getDocs(excecoesRef);
 
-      alert(`Usuário ${userName} foi excluído com sucesso.`);
+          // Excluir cada documento de exceção
+          const exclusoes = excecoesSnap.docs.map(doc => deleteDoc(doc.ref));
+
+          await Promise.all(exclusoes);
+
+          // Excluir o documento pai da coleção exceções
+          const excecoesPaiRef = doc(db, 'excecoes', userId);
+          await deleteDoc(excecoesPaiRef);
+        } catch (err) {
+          console.log('Erro ao excluir exceções ou nenhuma exceção encontrada:', err);
+        }
+      }
+
+      // 3. Excluir os agendamentos do usuário
+      try {
+        const agendamentosRef = collection(db, 'agendamentos');
+
+        // Buscar agendamentos onde o usuário é cliente
+        const clienteQuery = query(agendamentosRef, where('uid', '==', userId));
+        const clienteSnap = await getDocs(clienteQuery);
+
+        // Excluir agendamentos como cliente
+        const exclusoesCliente = clienteSnap.docs.map(doc => deleteDoc(doc.ref));
+
+        // Se for barbeiro, buscar agendamentos onde ele é o barbeiro
+        const exclusoesBarbeiro: Promise<void>[] = [];
+        if (currentRole === 'barber') {
+          const barbeiroQuery = query(agendamentosRef, where('barberId', '==', userId));
+          const barbeiroSnap = await getDocs(barbeiroQuery);
+
+          // Adicionar exclusões de agendamentos como barbeiro
+          barbeiroSnap.docs.forEach(doc => {
+            exclusoesBarbeiro.push(deleteDoc(doc.ref));
+          });
+        }
+
+        // Executar todas as exclusões
+        await Promise.all([...exclusoesCliente, ...exclusoesBarbeiro]);
+      } catch (err) {
+        console.error('Erro ao excluir agendamentos:', err);
+      }
+
+      setSuccess('Usuário excluído com sucesso!');
+
+      // A lista de usuários será atualizada automaticamente pelo listener do onSnapshot
     } catch (error) {
       console.error('Erro ao excluir usuário:', error);
       setError(
@@ -324,8 +366,8 @@ const AdminPromotionPanel: React.FC = () => {
                           Promover a Admin
                         </button>
                         <button
-                          onClick={() => deleteUserAccount(u.id, u.name)}
-                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                          onClick={() => deleteUser(u.id, u.role)}
+                          className="bg-red-500 hover:bg-red-700 text-white py-1 px-2 rounded"
                         >
                           Excluir Usuário
                         </button>
@@ -353,8 +395,8 @@ const AdminPromotionPanel: React.FC = () => {
                           Promover a Admin
                         </button>
                         <button
-                          onClick={() => deleteUserAccount(u.id, u.name)}
-                          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                          onClick={() => deleteUser(u.id, u.role)}
+                          className="bg-red-500 hover:bg-red-700 text-white py-1 px-2 rounded"
                         >
                           Excluir Usuário
                         </button>
