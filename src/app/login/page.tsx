@@ -1,52 +1,45 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+import React, { useState } from 'react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
+import { useRouter } from 'next/navigation';
+import Footer from '@/components/Footer';
 
 const Login: React.FC = () => {
   // Estados para email, senha, visibilidade da senha e mensagem de erro
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(""); // Limpa erro anterior
+    setError(''); // Limpa erro anterior
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      router.push("/");
+      router.push('/');
     } catch (err: any) {
       // Verifica se o erro está relacionado a credenciais inválidas
       if (
-        err.code === "auth/wrong-password" ||
-        err.code === "auth/user-not-found" ||
-        err.code === "auth/invalid-email" ||
-        err.code === "auth/invalid-credential"
+        err.code === 'auth/wrong-password' ||
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/invalid-email' ||
+        err.code === 'auth/invalid-credential'
       ) {
-        setError("Usuário ou senha incorretos. Por favor, tente novamente.");
+        setError('Usuário ou senha incorretos. Por favor, tente novamente.');
       } else {
-        setError("Ocorreu um erro inesperado ao tentar efetuar o login.");
+        setError('Ocorreu um erro inesperado ao tentar efetuar o login.');
       }
     }
   };
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
-      {/* Cabeçalho */}
-      <Header />
-
       {/* Conteúdo Principal */}
       <main className="flex flex-col items-center justify-center flex-grow py-20 px-4">
-        <form
-          onSubmit={handleLogin}
-          className="bg-gray-900 p-6 rounded shadow-md w-full max-w-sm"
-        >
+        <form onSubmit={handleLogin} className="bg-gray-900 p-6 rounded shadow-md w-full max-w-sm">
           <h2 className="text-2xl font-semibold mb-4 text-center">Entrar</h2>
           {error && <p className="text-red-500 text-center mb-4">{error}</p>}
 
@@ -56,7 +49,7 @@ const Login: React.FC = () => {
               type="email"
               placeholder="Digite seu email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={e => setEmail(e.target.value)}
               required
               className="w-full p-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:border-yellow-500"
             />
@@ -66,10 +59,10 @@ const Login: React.FC = () => {
           <div className="mb-4">
             <div className="flex border border-gray-700 rounded overflow-hidden">
               <input
-                type={showPassword ? "text" : "password"}
+                type={showPassword ? 'text' : 'password'}
                 placeholder="Digite sua senha"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
                 required
                 className="flex-grow p-2 bg-gray-800 text-white focus:outline-none"
               />
