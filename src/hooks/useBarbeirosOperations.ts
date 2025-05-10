@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { collection, doc, addDoc, updateDoc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Barbeiro } from '@/hooks/useBarbeiros';
 import { OperatingHours, Exception } from '@/types/common';
 
 export function useBarbeirosOperations() {
@@ -13,7 +12,7 @@ export function useBarbeirosOperations() {
     setLoading(true);
     try {
       // Salvar na coleção horarios
-      await setDoc(doc(db, "horarios", barberId), horarios);
+      await setDoc(doc(db, 'horarios', barberId), horarios);
       setLoading(false);
       return { success: true };
     } catch (err) {
@@ -29,27 +28,27 @@ export function useBarbeirosOperations() {
     setLoading(true);
     try {
       console.log(`Adicionando exceção para barbeiro ${barberId}: `, exception);
-      
+
       // Garantir que a coleção exista - fazer isso de forma incremental evita erros de permissão
-      const excecoesRef = collection(db, "excecoes");
+      const excecoesRef = collection(db, 'excecoes');
       const barbeiroExcecoesRef = doc(excecoesRef, barberId);
-      
+
       // Primeiro verificar se o documento existe
       const barbeiroExcecoesSnap = await getDoc(barbeiroExcecoesRef);
-      
+
       // Se não existir, criar um documento vazio
       if (!barbeiroExcecoesSnap.exists()) {
         await setDoc(barbeiroExcecoesRef, {});
         console.log(`Documento base criado em excecoes/${barberId}`);
       }
-      
+
       // Agora adicionar a exceção na subcoleção datas
       const dataId = exception.date; // Usar a data como ID
-      const exceptionDocRef = doc(collection(db, "excecoes", barberId, "datas"), dataId);
-      
+      const exceptionDocRef = doc(collection(db, 'excecoes', barberId, 'datas'), dataId);
+
       await setDoc(exceptionDocRef, exception);
       console.log(`Exceção criada com sucesso: ${dataId}`);
-      
+
       setLoading(false);
       return { success: true, id: dataId };
     } catch (err) {
@@ -64,7 +63,7 @@ export function useBarbeirosOperations() {
   const deleteBarbeiroException = async (barberId: string, exceptionId: string) => {
     setLoading(true);
     try {
-      await deleteDoc(doc(db, "excecoes", barberId, "datas", exceptionId));
+      await deleteDoc(doc(db, 'excecoes', barberId, 'datas', exceptionId));
       setLoading(false);
       return { success: true };
     } catch (err) {
@@ -75,11 +74,11 @@ export function useBarbeirosOperations() {
     }
   };
 
-  return { 
-    updateBarbeiroHorarios, 
-    addBarbeiroException, 
-    deleteBarbeiroException, 
-    loading, 
-    error 
+  return {
+    updateBarbeiroHorarios,
+    addBarbeiroException,
+    deleteBarbeiroException,
+    loading,
+    error,
   };
 }

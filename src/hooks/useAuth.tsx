@@ -4,7 +4,6 @@ import { useState, useEffect, createContext, useContext, ReactNode } from 'react
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { OperatingHours, Exception } from '@/types/common';
 
 // Definição da interface para o usuário com informações extras
 export interface ExtendedUser {
@@ -12,8 +11,6 @@ export interface ExtendedUser {
   email: string | null;
   role?: 'admin' | 'barber' | 'user';
   name?: string;
-  horarios?: OperatingHours;
-  exceptions?: Exception[];
 }
 
 interface AuthContextType {
@@ -69,8 +66,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               email: currentUser.email,
               role: userData.role || 'user',
               name: userData.name,
-              horarios: userData.horarios,
-              exceptions: userData.exceptions || [],
             });
           } else if (isMounted) {
             setUser({
@@ -111,8 +106,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               email: firebaseUser.email,
               role: userData.role || 'user',
               name: userData.name,
-              horarios: userData.horarios,
-              exceptions: userData.exceptions || [],
             });
           } else if (isMounted) {
             setUser({

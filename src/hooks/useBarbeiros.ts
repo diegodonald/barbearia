@@ -1,87 +1,66 @@
-import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import useAuth from '@/hooks/useAuth';
-// Prefixar com _ para indicar que não está sendo usado diretamente
-import { ExtendedUser as _ExtendedUser } from '@/types/common';
+'use client';
 
-export interface Barbeiro {
+import { useState, useEffect } from 'react';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
+interface Barbeiro {
   id: string;
   name: string;
-  horarios?: any;
-  exceptions?: any[];
+  email?: string;
+  role: string;
+  // Outros campos que possam existir
 }
 
 export function useBarbeiros() {
   const [barbeiros, setBarbeiros] = useState<Barbeiro[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
 
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+    async function fetchBarbeiros() {
+      try {
+        setLoading(true);
+        console.log('Buscando barbeiros...');
 
-    try {
-      // Buscar da coleção "barbeiros" em vez de "usuarios"
-      const q = query(collection(db, 'barbeiros'), where('active', '==', true));
+        // Query a coleção 'usuarios' onde role=barber
+        const usuariosRef = collection(db, 'usuarios');
+        const q = query(usuariosRef, where('role', '==', 'barber'));
 
-      const unsubscribe = onSnapshot(
-        q,
-        async querySnapshot => {
-          // Array para armazenar os barbeiros com dados enriquecidos
-          const barbeirosPromises = querySnapshot.docs.map(async docSnapshot => {
-            const barberData = docSnapshot.data();
-            const barberId = docSnapshot.id;
+        try {
+          const querySnapshot = await getDocs(q);
+          console.log('Total de barbeiros encontrados:', querySnapshot.size);
 
-            // Buscar informações adicionais do usuário
-            const userDocRef = doc(db, 'usuarios', barberId);
-            const userDocSnap = await getDoc(userDocRef);
-            const userData = userDocSnap.exists()
-              ? (userDocSnap.data() as Record<string, any>)
-              : {};
-
-            // Buscar horários específicos na coleção horarios
-            const horariosRef = doc(db, 'horarios', barberId);
-            const horariosSnap = await getDoc(horariosRef);
-            const horarios = horariosSnap.exists() ? horariosSnap.data() : null;
-
-            // Buscar exceções
-            const excecoesRef = collection(db, 'excecoes', barberId, 'datas');
-            const excecoesSnap = await getDocs(excecoesRef);
-            const exceptions = excecoesSnap.docs.map(docData => ({
-              id: docData.id,
-              ...docData.data(),
-            }));
-
-            return {
-              id: barberId,
-              name: barberData.name || userData.name || 'Barbeiro sem nome',
-              horarios: horarios,
-              exceptions: exceptions,
-            };
+          const barbers: Barbeiro[] = [];
+          querySnapshot.forEach(doc => {
+            const data = doc.data();
+            console.log('Barbeiro encontrado:', doc.id);
+            barbers.push({
+              id: doc.id,
+              name: data.name || 'Nome não encontrado',
+              role: data.role || 'barber',
+              email: data.email,
+              ...data,
+            });
           });
 
-          const barbeirosData = await Promise.all(barbeirosPromises);
-          setBarbeiros(barbeirosData);
-          setLoading(false);
-        },
-        err => {
-          console.error('Erro ao buscar barbeiros:', err);
-          setError('Não foi possível carregar a lista de barbeiros.');
-          setLoading(false);
+          setBarbeiros(barbers);
+          setError(null);
+        } catch (queryErr: any) {
+          console.error('Erro na consulta de barbeiros:', queryErr);
+          throw queryErr;
         }
-      );
-
-      return () => unsubscribe();
-    } catch (err) {
-      console.error('Erro ao configurar listener de barbeiros:', err);
-      setError('Erro ao configurar busca de barbeiros.');
-      setLoading(false);
+      } catch (err: any) {
+        console.error('Erro ao buscar barbeiros:', err);
+        setError(err.message || 'Erro desconhecido ao buscar barbeiros');
+        setBarbeiros([]); // Garantir que o array esteja vazio em caso de erro
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [user]);
+
+    fetchBarbeiros();
+  }, []);
 
   return { barbeiros, loading, error };
 }
