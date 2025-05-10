@@ -1,178 +1,118 @@
+'use client';
+
 import { useState, useEffect } from 'react';
-import { collection, doc, getDoc, onSnapshot, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import useAuth from '@/hooks/useAuth';
-import { OperatingHours, Exception, DayConfig } from '@/types/common';
+import { OperatingHours, Exception } from '@/types/schedule';
 
-// Configuração global padrão
-const defaultOperatingHours: OperatingHours = {
-  domingo: { active: false },
-  segunda: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
-  terça: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
-  quarta: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
-  quinta: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
-  sexta: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '18:00' },
-  sábado: { active: true, open: '08:00', breakStart: '12:00', breakEnd: '13:30', close: '14:00' }
-};
-
-export function useOperatingHours(barberId?: string) {
-  const { user } = useAuth();
-  const [operatingHours, setHorarios] = useState<OperatingHours | null>(null);
+export function useOperatingHours(targetId: string = 'global') {
+  const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
   const [exceptions, setExceptions] = useState<Exception[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Carregar horários e exceções
   useEffect(() => {
-    // Determinar qual documento de horários carregar
-    const horariosRef = barberId
-      ? doc(db, "horarios", barberId)
-      : doc(db, "configuracoes", "horarios");
-    
-    const fetchHorarios = async () => {
+    if (!targetId) return;
+
+    async function fetchData() {
+      setLoading(true);
       try {
-        const docSnap = await getDoc(horariosRef);
-        if (docSnap.exists()) {
-          setHorarios(docSnap.data() as OperatingHours);
+        console.log('Buscando horários para:', targetId);
+
+        // Buscar horários da nova estrutura
+        const horariosDocRef = doc(db, 'horarios', targetId);
+        const horariosSnapshot = await getDoc(horariosDocRef);
+
+        if (horariosSnapshot.exists()) {
+          console.log('Horários encontrados na nova estrutura');
+          setOperatingHours(horariosSnapshot.data() as OperatingHours);
         } else {
-          setHorarios(defaultOperatingHours);
+          console.log('Nenhum horário encontrado para:', targetId);
+          // Carregar configuração padrão se não existir
+          setOperatingHours({
+            domingo: { active: false },
+            segunda: { active: true, open: '08:00', close: '18:00' },
+            terça: { active: true, open: '08:00', close: '18:00' },
+            quarta: { active: true, open: '08:00', close: '18:00' },
+            quinta: { active: true, open: '08:00', close: '18:00' },
+            sexta: { active: true, open: '08:00', close: '18:00' },
+            sábado: { active: true, open: '08:00', close: '13:00' },
+          });
         }
-        setLoading(false);
+
+        // Buscar exceções da nova estrutura
+        try {
+          console.log('Buscando exceções para:', targetId);
+          const exceptionsList: Exception[] = [];
+          const excecoesRef = collection(db, 'excecoes', targetId, 'datas');
+          const excecoesSnapshot = await getDocs(excecoesRef);
+
+          excecoesSnapshot.forEach(doc => {
+            exceptionsList.push({
+              id: doc.id,
+              ...(doc.data() as Exception),
+            });
+          });
+
+          setExceptions(exceptionsList);
+        } catch (excErr) {
+          console.error('Erro ao buscar exceções:', excErr);
+          // Não falhar completamente se houver erro apenas nas exceções
+        }
       } catch (err) {
-        console.error('Erro ao carregar horários:', err);
-        setError('Falha ao carregar horários.');
+        console.error('Erro ao buscar dados de horários:', err);
+        setError('Falha ao carregar configurações');
+      } finally {
         setLoading(false);
       }
-    };
-
-    // Carregar exceções (da subcoleção correta)
-    const exceptionsRef = barberId
-      ? collection(db, "excecoes", barberId, "datas")
-      : collection(db, "configuracoes", "excecoes", "datas");
-    
-    const unsubscribe = onSnapshot(exceptionsRef, (snapshot) => {
-      const exceptionsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Exception));
-      
-      setExceptions(exceptionsList);
-    }, (err) => {
-      console.error('Erro ao carregar exceções:', err);
-      setError('Falha ao carregar exceções.');
-    });
-
-    fetchHorarios();
-    return () => unsubscribe();
-  }, [barberId]);
-
-  async function updateHorarios(newHorarios: OperatingHours) {
-    try {
-      if (!user) {
-        return { success: false, error: 'Usuário não autenticado.' };
-      }
-      
-      if (barberId && user.role !== 'admin' && user.uid !== barberId) {
-        return { success: false, error: 'Permissão negada.' };
-      }
-      
-      const docRef = barberId
-        ? doc(db, "horarios", barberId)
-        : doc(db, "configuracoes", "horarios");
-      
-      await setDoc(docRef, newHorarios);
-      setHorarios(newHorarios);
-      return { success: true };
-    } catch (err) {
-      console.error('Erro ao atualizar horários:', err);
-      return { success: false, error: 'Falha ao atualizar horários.' };
     }
-  }
 
-  async function addException(exception: Omit<Exception, 'id'>) {
+    fetchData();
+  }, [targetId]);
+
+  // Função para salvar horários
+  const saveOperatingHours = async (newHours: OperatingHours): Promise<boolean> => {
+    if (!targetId) return false;
+
     try {
-      if (!user) {
-        return { success: false, error: 'Usuário não autenticado.' };
-      }
-      
-      if (barberId && user.role !== 'admin' && user.uid !== barberId) {
-        return { success: false, error: 'Permissão negada.' };
-      }
-      
-      const collRef = barberId
-        ? collection(db, 'excecoes', barberId, 'datas')
-        : collection(db, 'configuracoes', 'excecoes', 'datas');
-      
-      // Usar a data como ID
-      const docId = exception.date;
-      await setDoc(doc(collRef, docId), exception);
-      
-      setExceptions([...exceptions, { ...exception, id: docId }]);
-      return { success: true };
+      console.log('Salvando horários para:', targetId);
+      await setDoc(doc(db, 'horarios', targetId), newHours);
+      setOperatingHours(newHours);
+      return true;
     } catch (err) {
-      console.error('Erro ao adicionar exceção:', err);
-      return { success: false, error: 'Falha ao adicionar exceção.' };
+      console.error('Erro ao salvar horários:', err);
+      return false;
     }
-  }
+  };
 
-  async function updateException(id: string, data: Partial<Exception>) {
+  // Função para salvar uma exceção
+  const saveException = async (exception: Exception): Promise<boolean> => {
+    if (!targetId || !exception.date) return false;
+
     try {
-      if (!user) {
-        return { success: false, error: 'Usuário não autenticado.' };
-      }
-      
-      if (barberId && user.role !== 'admin' && user.uid !== barberId) {
-        return { success: false, error: 'Permissão negada.' };
-      }
-      
-      const docRef = barberId 
-        ? doc(db, 'usuarios', barberId, 'exceptions', id)
-        : doc(db, 'configuracoes', 'operatingHours', 'exceptions', id);
-      
-      await updateDoc(docRef, data);
-      
+      console.log('Salvando exceção para:', targetId, 'data:', exception.date);
+      await setDoc(doc(db, 'excecoes', targetId, 'datas', exception.date), exception);
+
       // Atualizar o estado local
-      setExceptions(
-        exceptions.map(exc => exc.id === id ? { ...exc, ...data } : exc)
-      );
-      
-      return { success: true };
-    } catch (err) {
-      console.error('Erro ao atualizar exceção:', err);
-      return { success: false, error: 'Falha ao atualizar exceção.' };
-    }
-  }
+      setExceptions(prev => {
+        const filtered = prev.filter(ex => ex.date !== exception.date);
+        return [...filtered, { ...exception, id: exception.date }];
+      });
 
-  async function deleteException(id: string) {
-    try {
-      if (!user) {
-        return { success: false, error: 'Usuário não autenticado.' };
-      }
-      
-      if (barberId && user.role !== 'admin' && user.uid !== barberId) {
-        return { success: false, error: 'Permissão negada.' };
-      }
-      
-      const docRef = barberId
-        ? doc(db, 'excecoes', barberId, 'datas', id)
-        : doc(db, 'configuracoes', 'excecoes', 'datas', id);
-      
-      await deleteDoc(docRef);
-      setExceptions(exceptions.filter(exc => exc.id !== id));
-      return { success: true };
+      return true;
     } catch (err) {
-      console.error('Erro ao excluir exceção:', err);
-      return { success: false, error: 'Falha ao excluir exceção.' };
+      console.error('Erro ao salvar exceção:', err);
+      return false;
     }
-  }
+  };
 
-  return { 
-    operatingHours, 
-    exceptions, 
-    loading, 
-    error, 
-    updateHorarios, 
-    addException,
-    updateException,
-    deleteException
+  return {
+    operatingHours,
+    exceptions,
+    loading,
+    error,
+    saveOperatingHours,
+    saveException,
   };
 }

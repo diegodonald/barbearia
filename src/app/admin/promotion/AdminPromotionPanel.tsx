@@ -155,13 +155,6 @@ const AdminPromotionPanel: React.FC = () => {
           const userData = userDoc.data();
 
           // 2. Criar entrada na coleção barbeiros
-          console.log('Criando documento na coleção barbeiros');
-          const barberRef = doc(db, 'barbeiros', userId);
-          await setDoc(barberRef, {
-            userId: userId,
-            name: userData?.name || 'Sem nome',
-            active: true,
-          });
 
           // ... resto do código para criar horários e configurações ...
         } catch (innerError) {
